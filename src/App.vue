@@ -1,5 +1,7 @@
 <script setup>
 import { ref, computed } from "vue";
+import { products as productData, categories } from "./data/products";
+import ProductCard from "./components/product/ProductCard.vue";
 
 const isLoggedIn = ref(false);
 const showLogin = ref(false);
@@ -23,6 +25,8 @@ const orders = ref([]);
 const showProductDetail = ref(false);
 const selectedProduct = ref(null);
 const selectedQuantity = ref(1);
+
+const products = ref(productData);
 
 // Data alamat pengguna
 const userAddress = ref({
@@ -51,74 +55,6 @@ const showSuccessModal = ref(false);
 
 // Metode pembayaran sementara
 const paymentMethod = ref("COD");
-
-const categories = ["Best Seller", "Aksesoris", "Fashion", "Toy", "Desserts"];
-
-// Data produk sementara
-const products = ref([
-  {
-    id: 1,
-    name: "Cheese Cuit 150ml",
-    variant: "Original",
-    price: 10000,
-    category: "Desserts",
-    image: "/images/Dessert/Cheesecuit original.png",
-    bestseller: true,
-
-    stock: 20,
-    description:
-      "Cheese Cuit dengan perpaduan keju yang lembut dan cita rasa gurih. Dibuat menggunakan bahan pilihan berkualitas.",
-  },
-  {
-    id: 2,
-    name: "Cheese Cuit 150ml",
-    variant: "Milo",
-    price: 10000,
-    category: "Desserts",
-    image: "/images/Dessert/Cheesekut Tiramisu.jpg",
-    bestseller: true,
-
-    stock: 17,
-    description:
-      "Cheese Cuit dengan varian rasa Milo yang lezat, cocok untuk menemani waktu santai.",
-  },
-  {
-    id: 3,
-    name: "Keychain Tutup Botol",
-    variant: "",
-    price: 5000,
-    category: "Aksesoris",
-    image: "/images/Akseseoris/keychain.jpg",
-    bestseller: true,
-  },
-  {
-    id: 4,
-    name: "Hiasan Atap Gelas Plastik",
-    variant: "",
-    price: 5000,
-    category: "Aksesoris",
-    image: "/images/Akseseoris/hiasan lampu.jpg",
-    bestseller: true,
-  },
-  {
-    id: 5,
-    name: "Basic Oversized T-Shirt",
-    variant: "Black",
-    price: 45000,
-    category: "Fashion",
-    image: "/images/Fashion/download (11).jpg",
-    bestseller: true,
-  },
-  {
-    id: 6,
-    name: "Basic Oversized T-Shirt",
-    variant: "White",
-    price: 45000,
-    category: "Fashion",
-    image: "/images/Fashion/download (12).jpg",
-    bestseller: true,
-  },
-]);
 
 const selectedSubtotal = computed(() => {
   if (!selectedProduct.value) return 0;
@@ -555,56 +491,17 @@ function scrollProducts(direction) {
           class="product-list"
           :class="{ 'logged-in': isLoggedIn }"
         >
-          <article
+          <ProductCard
             v-for="product in filteredProducts"
             :key="product.id"
-            class="product-card"
-          >
-            <div class="product-image">
-              <img
-                :src="product.image"
-                :alt="product.name"
-                @error="
-                  (event) =>
-                    (event.target.src =
-                      'https://placehold.co/500x400/f1f1f1/2438d2?text=Gans+Store')
-                "
-              />
-
-              <button
-                class="favorite-btn"
-                :class="{ favorited: favorites.includes(product.id) }"
-                @click="toggleFavorite(product.id)"
-              >
-                {{ favorites.includes(product.id) ? "♥" : "♡" }}
-              </button>
-
-              <button
-                v-if="isLoggedIn"
-                class="quick-cart"
-                @click="addToCart(product)"
-                title="Tambah ke keranjang"
-              >
-                🛒
-              </button>
-            </div>
-
-            <div class="product-info">
-              <div class="product-description">
-                <h3>{{ product.name }}</h3>
-                <p v-if="product.variant">{{ product.variant }}</p>
-                <p class="product-price">{{ formatPrice(product.price) }}</p>
-              </div>
-
-              <button
-                v-if="isLoggedIn"
-                class="order-btn"
-                @click="orderProduct(product)"
-              >
-                Pesan
-              </button>
-            </div>
-          </article>
+            :product="product"
+            :favorites="favorites"
+            :is-logged-in="isLoggedIn"
+            :format-price="formatPrice"
+            @toggle-favorite="toggleFavorite"
+            @add-to-cart="addToCart"
+            @order="orderProduct"
+          />
         </div>
 
         <div v-else class="empty-products">
@@ -1232,7 +1129,7 @@ function scrollProducts(direction) {
         </div>
       </div>
     </div>
-    
+
     <!-- LOGIN MODAL -->
     <div v-if="showLogin" class="modal-overlay" @click.self="showLogin = false">
       <div class="auth-modal">

@@ -327,6 +327,72 @@ button {
   overflow: visible;
 }
 
+/* =========================
+   PRODUCT HORIZONTAL SLIDER
+   AFTER LOGIN
+========================= */
+
+.product-list.logged-in {
+  display: grid;
+
+  /* Maksimal 2 baris */
+  grid-template-rows: repeat(2, auto);
+
+  /* Susun produk ke samping */
+  grid-auto-flow: column;
+
+  /* Lebar setiap kolom */
+  grid-auto-columns: calc((100% - 15px) / 2);
+
+  /* Jarak antarproduk */
+  gap: 20px 15px;
+
+  /* Scroll horizontal */
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  padding: 3px 3px 15px;
+
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) #eeeeee;
+}
+
+/* Pastikan card memenuhi kolom */
+.product-list.logged-in .product-card {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+/* Tampilan scrollbar Chrome dan Edge */
+.product-list.logged-in::-webkit-scrollbar {
+  height: 7px;
+}
+
+.product-list.logged-in::-webkit-scrollbar-track {
+  background: #eeeeee;
+  border-radius: 10px;
+}
+
+.product-list.logged-in::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 10px;
+}
+
+.product-list.logged-in::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-hover);
+}
+
+/* Responsive */
+@media (max-width: 650px) {
+  .product-list.logged-in {
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: calc((100% - 10px) / 2);
+    gap: 15px 10px;
+  }
+}
+
 /* Tampilan sebelum login */
 .product-grid {
   display: grid;
