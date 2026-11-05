@@ -2,6 +2,7 @@
 import { ref, computed } from "vue";
 import { products as productData, categories } from "./data/products";
 import ProductCard from "./components/product/ProductCard.vue";
+import ProductDetailModal from "./components/product/ProductDetailModal.vue";
 
 const isLoggedIn = ref(false);
 const showLogin = ref(false);
@@ -27,6 +28,7 @@ const selectedProduct = ref(null);
 const selectedQuantity = ref(1);
 
 const products = ref(productData);
+const directCheckoutProduct = ref(null);
 
 // Data alamat pengguna
 const userAddress = ref({
@@ -66,7 +68,9 @@ const filteredProducts = computed(() => {
   return products.value.filter((product) => {
     const matchSearch =
       product.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      product.variant.toLowerCase().includes(searchQuery.value.toLowerCase());
+      (product.variant || "")
+        .toLowerCase()
+        .includes(searchQuery.value.toLowerCase());
 
     const matchCategory =
       activeCategory.value === "Best Seller"
@@ -105,6 +109,26 @@ const formatPrice = (price) => {
   }).format(price);
 };
 
+const checkoutProducts = computed(() => {
+  if (directCheckoutProduct.value) {
+    return [directCheckoutProduct.value];
+  }
+
+  return cart.value;
+});
+
+const checkoutTotal = computed(() => {
+  return checkoutProducts.value.reduce((total, item) => {
+    return total + item.price * item.quantity;
+  }, 0);
+});
+
+const checkoutItemCount = computed(() => {
+  return checkoutProducts.value.reduce((total, item) => {
+    return total + item.quantity;
+  }, 0);
+});
+
 function orderProduct(product) {
   if (!isLoggedIn.value) {
     showLogin.value = true;
@@ -141,23 +165,20 @@ function checkoutSelectedProduct() {
 
   const product = selectedProduct.value;
 
-  const existingProduct = cart.value.find((item) => item.id === product.id);
+  if (product.stock < 1) {
+    alert("Maaf, stok produk sedang habis!");
+    return;
+  }
 
-  const currentQuantity = existingProduct ? existingProduct.quantity : 0;
-
-  if (currentQuantity + selectedQuantity.value > product.stock) {
+  if (selectedQuantity.value > product.stock) {
     alert("Jumlah produk melebihi stok yang tersedia!");
     return;
   }
 
-  if (existingProduct) {
-    existingProduct.quantity += selectedQuantity.value;
-  } else {
-    cart.value.push({
-      ...product,
-      quantity: selectedQuantity.value,
-    });
-  }
+  directCheckoutProduct.value = {
+    ...product,
+    quantity: selectedQuantity.value,
+  };
 
   closeProductDetail();
   startCheckout();
@@ -176,15 +197,40 @@ function toggleFavorite(id) {
   }
 }
 
+function startCheckout() {
+  // Checkout langsung atau checkout dari keranjang
+  if (!directCheckoutProduct.value && cart.value.length === 0) {
+    alert("Keranjang kamu masih kosong!");
+    return;
+  }
+
+  if (!userAddress.value.recipient) {
+    openAddressForm();
+    return;
+  }
+
+  activePage.value = "checkout";
+}
+
 function addToCart(product) {
   if (!isLoggedIn.value) {
     showLogin.value = true;
     return;
   }
 
+  if (product.stock < 1) {
+    alert("Maaf, stok produk sedang habis!");
+    return;
+  }
+
   const existingProduct = cart.value.find((item) => item.id === product.id);
 
   if (existingProduct) {
+    if (existingProduct.quantity >= product.stock) {
+      alert("Jumlah produk sudah mencapai batas stok!");
+      return;
+    }
+
     existingProduct.quantity++;
   } else {
     cart.value.push({
@@ -196,27 +242,20 @@ function addToCart(product) {
   alert("Produk berhasil ditambahkan ke keranjang!");
 }
 
-function startCheckout() {
-  if (cart.value.length === 0) {
-    alert("Keranjang kamu masih kosong!");
-    return;
-  }
-
-  if (!userAddress.value.recipient) {
-    activePage.value = "address";
-    return;
-  }
-
-  activePage.value = "checkout";
-}
-
 function increaseQuantity(productId) {
   const index = cart.value.findIndex((item) => item.id === productId);
 
   if (index !== -1) {
+    const item = cart.value[index];
+
+    if (item.quantity >= item.stock) {
+      alert("Jumlah produk sudah mencapai batas stok!");
+      return;
+    }
+
     cart.value[index] = {
-      ...cart.value[index],
-      quantity: cart.value[index].quantity + 1,
+      ...item,
+      quantity: item.quantity + 1,
     };
   }
 }
@@ -254,6 +293,19 @@ function openAddressForm() {
   activePage.value = "address";
 }
 
+function cancelCheckout() {
+  directCheckoutProduct.value = null;
+  activePage.value = "home";
+}
+
+function backToPreviousPage() {
+  if (directCheckoutProduct.value) {
+    cancelCheckout();
+  } else {
+    activePage.value = "cart";
+  }
+}
+
 function saveAddress() {
   const address = addressForm.value;
 
@@ -281,21 +333,32 @@ function placeOrder() {
     return;
   }
 
-  if (cart.value.length === 0) {
-    alert("Keranjang kamu masih kosong!");
-    activePage.value = "cart";
+  if (checkoutProducts.value.length === 0) {
+    alert("Tidak ada produk yang akan dipesan!");
     return;
+  }
+
+  // Validasi stok sebelum pesanan dibuat
+  for (const item of checkoutProducts.value) {
+    const latestProduct = products.value.find(
+      (product) => product.id === item.id,
+    );
+
+    if (!latestProduct || item.quantity > latestProduct.stock) {
+      alert(`Stok ${item.name} tidak mencukupi!`);
+      return;
+    }
   }
 
   const newOrder = {
     id: "GS-" + Date.now(),
     date: new Date().toLocaleString("id-ID"),
-    items: cart.value.map((product) => ({
+    items: checkoutProducts.value.map((product) => ({
       ...product,
     })),
     address: { ...userAddress.value },
     paymentMethod: paymentMethod.value,
-    total: cartTotal.value,
+    total: checkoutTotal.value,
     status: "Pesanan Dibuat",
   };
 
@@ -305,7 +368,12 @@ function placeOrder() {
 }
 
 function finishOrder() {
-  cart.value = [];
+  // Hanya kosongkan Cart jika checkout berasal dari Cart
+  if (!directCheckoutProduct.value) {
+    cart.value = [];
+  }
+
+  directCheckoutProduct.value = null;
   showSuccessModal.value = false;
   activePage.value = "home";
 }
@@ -631,7 +699,11 @@ function scrollProducts(direction) {
 
                   <span>{{ product.quantity }}</span>
 
-                  <button type="button" @click="increaseQuantity(product.id)">
+                  <button
+                    type="button"
+                    @click="increaseQuantity(product.id)"
+                    :disabled="product.quantity >= product.stock"
+                  >
                     +
                   </button>
                 </div>
@@ -784,7 +856,7 @@ function scrollProducts(direction) {
             <button
               type="button"
               class="address-cancel-btn"
-              @click="activePage = 'cart'"
+              @click="cancelCheckout"
             >
               Batal
             </button>
@@ -805,8 +877,8 @@ function scrollProducts(direction) {
           <p>Periksa kembali pesananmu sebelum melanjutkan.</p>
         </div>
 
-        <button class="back-home-btn" @click="activePage = 'cart'">
-          ← Kembali ke Keranjang
+        <button class="back-home-btn" @click="backToPreviousPage">
+          ← Kembali
         </button>
       </div>
 
@@ -835,7 +907,7 @@ function scrollProducts(direction) {
             <h3>Produk yang Dipesan</h3>
 
             <div
-              v-for="product in cartProducts"
+              v-for="product in checkoutProducts"
               :key="product.id"
               class="checkout-product"
             >
@@ -887,12 +959,12 @@ function scrollProducts(direction) {
 
           <div class="summary-row">
             <span>Total Produk</span>
-            <span>{{ cartItemCount }} item</span>
+            <span>{{ checkoutItemCount }} item</span>
           </div>
 
           <div class="summary-row">
             <span>Subtotal</span>
-            <strong>{{ formatPrice(cartTotal) }}</strong>
+            <strong>{{ formatPrice(checkoutTotal) }}</strong>
           </div>
 
           <div class="summary-row">
@@ -904,7 +976,7 @@ function scrollProducts(direction) {
 
           <div class="summary-row summary-total">
             <strong>Total Belanja</strong>
-            <strong>{{ formatPrice(cartTotal) }}</strong>
+            <strong>{{ formatPrice(checkoutTotal) }}</strong>
           </div>
 
           <button class="checkout-btn" @click="placeOrder">Buat Pesanan</button>
@@ -1035,212 +1107,129 @@ function scrollProducts(direction) {
     </div>
 
     <!-- PRODUCT DETAIL MODAL -->
-    <div
-      v-if="showProductDetail && selectedProduct"
-      class="product-detail-overlay"
-      @click.self="closeProductDetail"
-    >
-      <div class="product-detail-modal">
-        <!-- TOMBOL CLOSE -->
-        <button class="product-detail-close" @click="closeProductDetail">
-          ×
+    <ProductDetailModal
+      :show="showProductDetail"
+      :product="selectedProduct"
+      :quantity="selectedQuantity"
+      :subtotal="selectedSubtotal"
+      :format-price="formatPrice"
+      @close="closeProductDetail"
+      @increase="increaseSelectedQuantity"
+      @decrease="decreaseSelectedQuantity"
+      @checkout="checkoutSelectedProduct"
+    />
+  </div>
+
+  <!-- LOGIN MODAL -->
+  <div v-if="showLogin" class="modal-overlay" @click.self="showLogin = false">
+    <div class="auth-modal">
+      <button class="close-modal" @click="showLogin = false">×</button>
+
+      <div class="auth-logo">
+        <span>gan's</span>
+        <div class="auth-circle">G'S</div>
+        <span>store</span>
+      </div>
+
+      <h2>Login</h2>
+      <p class="auth-subtitle">Silakan login untuk melanjutkan</p>
+
+      <form @submit.prevent="login">
+        <label>Email / Username</label>
+        <input
+          v-model="username"
+          type="text"
+          placeholder="Masukkan email/username"
+        />
+
+        <label>Password</label>
+        <input
+          v-model="password"
+          type="password"
+          placeholder="Masukkan password"
+        />
+
+        <button class="auth-submit" type="submit">Login</button>
+      </form>
+
+      <p class="switch-auth">
+        Belum punya akun?
+        <button
+          @click="
+            showLogin = false;
+            showRegister = true;
+          "
+        >
+          Daftar
         </button>
-
-        <!-- GAMBAR PRODUK -->
-        <div class="product-detail-image">
-          <img :src="selectedProduct.image" :alt="selectedProduct.name" />
-        </div>
-
-        <!-- INFORMASI PRODUK -->
-        <div class="product-detail-content">
-          <div class="product-detail-main">
-            <div class="product-detail-info">
-              <h2>{{ selectedProduct.name }}</h2>
-
-              <p v-if="selectedProduct.variant">
-                {{ selectedProduct.variant }}
-              </p>
-
-              <strong class="detail-price">
-                {{ formatPrice(selectedProduct.price) }}
-              </strong>
-            </div>
-
-            <!-- QUANTITY -->
-            <div class="product-detail-quantity">
-              <div class="quantity-control">
-                <button
-                  type="button"
-                  @click="decreaseSelectedQuantity"
-                  :disabled="selectedQuantity <= 1"
-                >
-                  −
-                </button>
-
-                <span>{{ selectedQuantity }}</span>
-
-                <button
-                  type="button"
-                  @click="increaseSelectedQuantity"
-                  :disabled="selectedQuantity >= selectedProduct.stock"
-                >
-                  +
-                </button>
-              </div>
-
-              <span class="detail-stock">
-                Stok: {{ selectedProduct.stock }}
-              </span>
-            </div>
-          </div>
-
-          <div class="product-detail-divider"></div>
-
-          <!-- DESKRIPSI DAN SUBTOTAL -->
-          <div class="product-detail-bottom">
-            <div class="product-detail-description">
-              <span>Deskripsi Produk</span>
-
-              <p>
-                {{
-                  selectedProduct.description || "Belum ada deskripsi produk."
-                }}
-              </p>
-            </div>
-
-            <div class="product-detail-checkout">
-              <div class="detail-subtotal">
-                <strong>Subtotal</strong>
-
-                <strong>
-                  {{ formatPrice(selectedSubtotal) }}
-                </strong>
-              </div>
-
-              <button
-                class="detail-checkout-btn"
-                @click="checkoutSelectedProduct"
-                :disabled="selectedProduct.stock < 1"
-              >
-                Check Out
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      </p>
     </div>
+  </div>
 
-    <!-- LOGIN MODAL -->
-    <div v-if="showLogin" class="modal-overlay" @click.self="showLogin = false">
-      <div class="auth-modal">
-        <button class="close-modal" @click="showLogin = false">×</button>
+  <!-- REGISTER MODAL -->
+  <div
+    v-if="showRegister"
+    class="modal-overlay"
+    @click.self="showRegister = false"
+  >
+    <div class="auth-modal register-modal">
+      <button class="close-modal" @click="showRegister = false">×</button>
 
-        <div class="auth-logo">
-          <span>gan's</span>
-          <div class="auth-circle">G'S</div>
-          <span>store</span>
-        </div>
-
-        <h2>Login</h2>
-        <p class="auth-subtitle">Silakan login untuk melanjutkan</p>
-
-        <form @submit.prevent="login">
-          <label>Email / Username</label>
-          <input
-            v-model="username"
-            type="text"
-            placeholder="Masukkan email/username"
-          />
-
-          <label>Password</label>
-          <input
-            v-model="password"
-            type="password"
-            placeholder="Masukkan password"
-          />
-
-          <button class="auth-submit" type="submit">Login</button>
-        </form>
-
-        <p class="switch-auth">
-          Belum punya akun?
-          <button
-            @click="
-              showLogin = false;
-              showRegister = true;
-            "
-          >
-            Daftar
-          </button>
-        </p>
+      <div class="auth-logo">
+        <span>gan's</span>
+        <div class="auth-circle">G'S</div>
+        <span>store</span>
       </div>
-    </div>
 
-    <!-- REGISTER MODAL -->
-    <div
-      v-if="showRegister"
-      class="modal-overlay"
-      @click.self="showRegister = false"
-    >
-      <div class="auth-modal register-modal">
-        <button class="close-modal" @click="showRegister = false">×</button>
+      <h2>Register</h2>
+      <p class="auth-subtitle">Buat akun baru Gan's Store</p>
 
-        <div class="auth-logo">
-          <span>gan's</span>
-          <div class="auth-circle">G'S</div>
-          <span>store</span>
-        </div>
+      <form @submit.prevent="register">
+        <label>Nama Lengkap</label>
+        <input
+          v-model="fullName"
+          type="text"
+          placeholder="Masukkan nama lengkap"
+        />
 
-        <h2>Register</h2>
-        <p class="auth-subtitle">Buat akun baru Gan's Store</p>
+        <label>Username</label>
+        <input
+          v-model="registerUsername"
+          type="text"
+          placeholder="Buat username"
+        />
 
-        <form @submit.prevent="register">
-          <label>Nama Lengkap</label>
-          <input
-            v-model="fullName"
-            type="text"
-            placeholder="Masukkan nama lengkap"
-          />
+        <label>Email</label>
+        <input v-model="email" type="email" placeholder="Masukkan email" />
 
-          <label>Username</label>
-          <input
-            v-model="registerUsername"
-            type="text"
-            placeholder="Buat username"
-          />
+        <label>Password</label>
+        <input
+          v-model="registerPassword"
+          type="password"
+          placeholder="Buat password"
+        />
 
-          <label>Email</label>
-          <input v-model="email" type="email" placeholder="Masukkan email" />
-
-          <label>Password</label>
-          <input
-            v-model="registerPassword"
-            type="password"
-            placeholder="Buat password"
-          />
-
-          <!-- <label>Konfirmasi Password</label>
+        <!-- <label>Konfirmasi Password</label>
           <input
             v-model="confirmPassword"
             type="password"
             placeholder="Ulangi password"
           /> -->
 
-          <button class="auth-submit" type="submit">Daftar Sekarang</button>
-        </form>
+        <button class="auth-submit" type="submit">Daftar Sekarang</button>
+      </form>
 
-        <p class="switch-auth">
-          Sudah punya akun?
-          <button
-            @click="
-              showRegister = false;
-              showLogin = true;
-            "
-          >
-            Login
-          </button>
-        </p>
-      </div>
+      <p class="switch-auth">
+        Sudah punya akun?
+        <button
+          @click="
+            showRegister = false;
+            showLogin = true;
+          "
+        >
+          Login
+        </button>
+      </p>
     </div>
   </div>
 </template>
