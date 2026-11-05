@@ -575,6 +575,7 @@ function scrollProducts(direction) {
 <template>
   <div class="store">
     <StoreHeader
+      v-if="activePage !== 'admin'"
       :categories="categories"
       :search-query="searchQuery"
       :active-category="activeCategory"
@@ -599,7 +600,9 @@ function scrollProducts(direction) {
       :orders="orders"
       :categories="categories"
       :format-price="formatPrice"
+      :user-name="fullName || username"
       @home="activePage = 'home'"
+      @logout="logout"
       @create-product="createProduct"
       @update-product="updateProduct"
       @delete-product="deleteProduct"

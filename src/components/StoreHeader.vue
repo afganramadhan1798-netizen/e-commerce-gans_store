@@ -89,41 +89,48 @@ const emit = defineEmits([
       <button class="register-btn" @click="emit('show-register')">
         ▣ Daftar
       </button>
-
       <span class="slash">/</span>
-
       <button class="login-btn" @click="emit('show-login')">➜ Login</button>
     </div>
 
     <div v-else class="user-actions">
-      <div class="user-info">
-        <div class="user-avatar">
-          {{ (fullName || username || "U").charAt(0).toUpperCase() }}
-        </div>
-        <span>{{ fullName || username || "User" }}</span>
-      </div>
+      <button
+        class="wishlist-icon-btn"
+        :aria-label="`Wishlist, ${favoriteCount} produk`"
+        title="Wishlist"
+        @click="emit('navigate', 'wishlist')"
+      >
+        <span aria-hidden="true">♡</span>
+      </button>
 
       <button
         v-if="userRole === 'admin'"
-        class="user-btn"
+        class="user-btn admin-dashboard-btn"
         @click="emit('navigate', 'admin')"
       >
         Admin
       </button>
 
-      <button class="user-btn" @click="emit('navigate', 'wishlist')">
-        ♡ Wishlist ({{ favoriteCount }})
-      </button>
+      <div class="user-action-stack">
+        <button class="user-btn" @click="emit('navigate', 'orders')">
+          📦 Orders
+        </button>
+        <button class="user-btn" @click="emit('navigate', 'cart')">
+          🛒 Cart <span class="cart-count">{{ cartItemCount }}</span>
+        </button>
+      </div>
 
-      <button class="user-btn" @click="emit('navigate', 'orders')">
-        📦Orders
-      </button>
-
-      <button class="user-btn" @click="emit('navigate', 'cart')">
-        🛒 Cart ({{ cartItemCount }})
-      </button>
-
-      <button class="logout-btn" @click="emit('logout')">Logout</button>
+      <div class="user-account-stack">
+        <div class="user-info">
+          <div class="user-avatar">
+            {{ (fullName || username || "U").charAt(0).toUpperCase() }}
+          </div>
+          <span :title="fullName || username || 'User'">
+            {{ fullName || username || "User" }}
+          </span>
+        </div>
+        <button class="logout-btn" @click="emit('logout')">Logout</button>
+      </div>
     </div>
   </header>
 </template>

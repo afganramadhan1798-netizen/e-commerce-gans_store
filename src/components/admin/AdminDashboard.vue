@@ -22,10 +22,15 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  userName: {
+    type: String,
+    default: "Admin",
+  },
 });
 
 const emit = defineEmits([
   "home",
+  "logout",
   "create-product",
   "update-product",
   "delete-product",
@@ -140,36 +145,15 @@ function setOrderStatus(orderId, status) {
 
 <template>
   <main class="admin-page">
-    <div class="admin-heading">
-      <div>
-        <p class="admin-eyebrow">GAN'S STORE / ADMIN</p>
-        <h1>Manajemen Toko</h1>
-        <p class="admin-subtitle">Kelola katalog, pengguna, dan pesanan.</p>
+    <header class="admin-header">
+      <div class="admin-brand">
+        <div class="admin-brand-mark">G</div>
+        <div class="admin-brand-name">
+          <strong>gan's store</strong>
+          <span>ADMIN</span>
+        </div>
       </div>
-      <button class="admin-store-link" @click="emit('home')">
-        ← Lihat Toko
-      </button>
-    </div>
 
-    <section class="admin-metrics" aria-label="Ringkasan toko">
-      <div class="admin-metric">
-        <span class="admin-metric-label">Produk perlu dicek</span>
-        <strong>{{ lowStockCount }}</strong>
-        <small>Stok 5 atau kurang</small>
-      </div>
-      <div class="admin-metric">
-        <span class="admin-metric-label">Pengguna aktif</span>
-        <strong>{{ activeUserCount }}</strong>
-        <small>{{ users.length }} akun terdaftar</small>
-      </div>
-      <div class="admin-metric">
-        <span class="admin-metric-label">Pesanan berjalan</span>
-        <strong>{{ pendingOrderCount }}</strong>
-        <small>{{ orders.length }} pesanan keseluruhan</small>
-      </div>
-    </section>
-
-    <section class="admin-workspace">
       <nav class="admin-tabs" aria-label="Menu admin">
         <button
           :class="{ active: activeTab === 'products' }"
@@ -191,6 +175,44 @@ function setOrderStatus(orderId, status) {
         </button>
       </nav>
 
+      <div class="admin-header-actions">
+        <span class="admin-account-name" :title="userName">{{ userName }}</span>
+        <button class="admin-store-link" @click="emit('home')">
+          ← Lihat Toko
+        </button>
+        <button class="admin-logout-button" @click="emit('logout')">
+          Logout
+        </button>
+      </div>
+    </header>
+
+    <div class="admin-heading">
+      <div>
+        <p class="admin-eyebrow">GAN'S STORE / ADMIN</p>
+        <h1>Manajemen Toko</h1>
+        <p class="admin-subtitle">Kelola katalog, pengguna, dan pesanan.</p>
+      </div>
+    </div>
+
+    <section class="admin-metrics" aria-label="Ringkasan toko">
+      <div class="admin-metric">
+        <span class="admin-metric-label">Produk perlu dicek</span>
+        <strong>{{ lowStockCount }}</strong>
+        <small>Stok 5 atau kurang</small>
+      </div>
+      <div class="admin-metric">
+        <span class="admin-metric-label">Pengguna aktif</span>
+        <strong>{{ activeUserCount }}</strong>
+        <small>{{ users.length }} akun terdaftar</small>
+      </div>
+      <div class="admin-metric">
+        <span class="admin-metric-label">Pesanan berjalan</span>
+        <strong>{{ pendingOrderCount }}</strong>
+        <small>{{ orders.length }} pesanan keseluruhan</small>
+      </div>
+    </section>
+
+    <section class="admin-workspace">
       <div v-if="activeTab === 'products'" class="admin-panel">
         <div class="admin-panel-heading">
           <div>
@@ -533,12 +555,58 @@ function setOrderStatus(orderId, status) {
 
 <style scoped>
 .admin-page {
-  width: min(1200px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 38px 0 64px;
+  width: 100%;
+  margin: 0;
+  padding: 0 0 64px;
   color: #172033;
 }
 
+.admin-header {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  min-height: 78px;
+  padding: 10px max(24px, calc((100% - 1200px) / 2));
+  border-bottom: 1px solid #e1e5ed;
+  background: #fff;
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.admin-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #2438d2;
+  color: #fff;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.admin-brand-name {
+  display: grid;
+  gap: 2px;
+  color: #2438d2;
+  white-space: nowrap;
+}
+
+.admin-brand-name strong {
+  font-size: 14px;
+}
+
+.admin-brand-name span {
+  color: #69758a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
 .admin-heading,
 .admin-panel-heading,
 .admin-dialog-heading {
@@ -653,6 +721,54 @@ function setOrderStatus(orderId, status) {
   color: #59647a;
   font-size: 11px;
   text-align: center;
+}
+
+.admin-header .admin-tabs {
+  flex: 1;
+  justify-content: center;
+  gap: 18px;
+  padding: 0;
+  border: 0;
+}
+
+.admin-header .admin-tabs button {
+  align-self: stretch;
+  padding: 12px 8px 10px;
+  border-bottom-width: 3px;
+  white-space: nowrap;
+}
+
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.admin-account-name {
+  max-width: 130px;
+  overflow: hidden;
+  color: #263248;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-logout-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: #ff5050;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-logout-button:hover {
+  background: #d94343;
 }
 
 .admin-panel {
@@ -1056,10 +1172,54 @@ function setOrderStatus(orderId, status) {
   white-space: nowrap;
 }
 
+.admin-page > .admin-heading,
+.admin-page > .admin-metrics,
+.admin-page > .admin-workspace {
+  width: min(1200px, calc(100% - 48px));
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.admin-heading {
+  margin-top: 30px;
+}
+
 @media (max-width: 720px) {
   .admin-page {
-    width: min(100% - 28px, 1200px);
-    padding-top: 24px;
+    width: 100%;
+    padding-bottom: 48px;
+  }
+
+  .admin-header {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 10px 14px 0;
+  }
+
+  .admin-brand {
+    margin-right: auto;
+  }
+
+  .admin-header .admin-tabs {
+    order: 3;
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    overflow-x: auto;
+  }
+
+  .admin-header .admin-tabs button {
+    flex: 0 0 auto;
+  }
+
+  .admin-header-actions {
+    gap: 6px;
+  }
+
+  .admin-page > .admin-heading,
+  .admin-page > .admin-metrics,
+  .admin-page > .admin-workspace {
+    width: calc(100% - 28px);
   }
 
   .admin-heading h1 {
@@ -1077,12 +1237,6 @@ function setOrderStatus(orderId, status) {
 
   .admin-metric strong {
     font-size: 21px;
-  }
-
-  .admin-tabs {
-    justify-content: space-between;
-    gap: 12px;
-    padding: 0 14px;
   }
 
   .admin-panel {
@@ -1119,6 +1273,17 @@ function setOrderStatus(orderId, status) {
 }
 
 @media (max-width: 440px) {
+  .admin-account-name {
+    max-width: 70px;
+    font-size: 11px;
+  }
+
+  .admin-header-actions .admin-store-link,
+  .admin-logout-button {
+    padding: 8px;
+    font-size: 10px;
+  }
+
   .admin-heading {
     align-items: flex-start;
   }

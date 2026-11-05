@@ -133,9 +133,9 @@ button {
 .category-nav button {
   background: none;
   border: none;
-  color: var(--primary);
+  color: #7882a3;
   font-size: 17px;
-  font-weight: 600;
+  font-weight: 500;
   padding: 2px 5px;
   border-bottom: 2px solid transparent;
 }
@@ -172,8 +172,29 @@ button {
 .login-btn {
   color: white;
   background: var(--primary);
-  border: none;
-  min-width: 100px;
+}
+
+.category-nav button:hover {
+  color: var(--primary);
+}
+.category-nav button:not(.active) {
+  color: #7882a3;
+  font-weight: 500;
+}
+
+.category-nav button.active {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.category-nav button:hover:not(.active) {
+  color: var(--primary);
+  border-bottom-color: transparent;
+}
+
+.category-nav button.active {
+  color: var(--primary);
+  font-weight: 700;
 }
 
 .slash {
@@ -186,20 +207,53 @@ button {
 .user-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
+}
+
+.wishlist-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 1.5px solid var(--primary);
+  border-radius: 50%;
+  background: white;
+  color: var(--primary);
+  font-size: 27px;
+  line-height: 1;
+}
+
+.wishlist-icon-btn:hover {
+  background: #f0f2ff;
+}
+
+.user-action-stack,
+.user-account-stack {
+  display: grid;
+  grid-template-rows: repeat(2, 34px);
+  align-items: center;
+  gap: 6px;
+}
+
+.user-account-stack {
+  justify-items: end;
 }
 
 .user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 13px;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
 }
 
 .user-avatar {
-  width: 42px;
-  height: 42px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   background: var(--primary);
   color: white;
   border-radius: 50%;
@@ -208,21 +262,57 @@ button {
   font-weight: 700;
 }
 
+.user-info span {
+  max-width: 116px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .user-btn {
   background: var(--primary);
   color: white;
   border: none;
-  border-radius: 8px;
-  padding: 9px 13px;
+  border-radius: 6px;
+  padding: 7px 11px;
   font-weight: 600;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.user-btn:hover {
+  background: var(--primary-hover);
+}
+
+.cart-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: white;
+  color: var(--primary);
+  font-size: 10px;
+}
+
+.admin-dashboard-btn {
+  align-self: center;
 }
 
 .logout-btn {
   background: #ff5050;
   color: white;
   border: none;
-  border-radius: 8px;
-  padding: 9px 13px;
+  border-radius: 6px;
+  padding: 7px 11px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.logout-btn:hover {
+  background: #d94343;
 }
 
 /* MAIN CONTENT */
@@ -784,18 +874,37 @@ button {
   }
 
   .user-actions {
+    width: 100%;
     flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 7px;
   }
 
   .user-info {
     font-size: 11px;
   }
 
+  .user-info span {
+    max-width: 92px;
+  }
+
   .user-btn,
   .logout-btn {
     font-size: 11px;
-    padding: 7px 9px;
+    padding: 6px 8px;
+  }
+
+  .user-action-stack,
+  .user-account-stack {
+    grid-template-rows: repeat(2, 32px);
+    gap: 5px;
+  }
+
+  .wishlist-icon-btn {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    font-size: 24px;
   }
 
   .main-content {
