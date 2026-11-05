@@ -3,8 +3,18 @@ import { ref, computed } from "vue";
 import { products as productData, categories } from "./data/products";
 import ProductCard from "./components/product/ProductCard.vue";
 import ProductDetailModal from "./components/product/ProductDetailModal.vue";
+import StoreHeader from "./components/StoreHeader.vue";
+import HomePage from "./components/page/HomePage.vue";
+import WishlistPage from "./components/page/WishlistPage.vue";
+import CartPage from "./components/page/CartPage.vue";
+import AddressPage from "./components/page/AddressPage.vue";
+import CheckoutPage from "./components/page/CheckoutPage.vue";
+import OrdersPage from "./components/page/OrdersPage.vue";
+import AdminDashboard from "./components/admin/AdminDashboard.vue";
 
 const isLoggedIn = ref(false);
+const currentUserRole = ref(null);
+const currentUserId = ref(null);
 const showLogin = ref(false);
 const showRegister = ref(false);
 
@@ -22,6 +32,35 @@ const favorites = ref([]);
 const cart = ref([]);
 const activePage = ref("home");
 const orders = ref([]);
+const users = ref([
+  {
+    id: "admin-001",
+    name: "Admin Gan's Store",
+    username: "admin",
+    email: "admin@gansstore.test",
+    role: "admin",
+    status: "Aktif",
+    joinedAt: "Admin",
+  },
+  {
+    id: "customer-001",
+    name: "Alya Putri",
+    username: "alya",
+    email: "alya@example.test",
+    role: "customer",
+    status: "Aktif",
+    joinedAt: "Demo",
+  },
+  {
+    id: "customer-002",
+    name: "Bima Pratama",
+    username: "bima",
+    email: "bima@example.test",
+    role: "customer",
+    status: "Aktif",
+    joinedAt: "Demo",
+  },
+]);
 
 const showProductDetail = ref(false);
 const selectedProduct = ref(null);
@@ -128,6 +167,13 @@ const checkoutItemCount = computed(() => {
     return total + item.quantity;
   }, 0);
 });
+
+const adminUsers = computed(() =>
+  users.value.map((user) => ({
+    ...user,
+    isCurrentUser: user.id === currentUserId.value,
+  })),
+);
 
 function orderProduct(product) {
   if (!isLoggedIn.value) {
@@ -276,13 +322,50 @@ function decreaseQuantity(productId) {
 }
 
 function login() {
-  if (!username.value || !password.value) {
+  const identifier = username.value.trim().toLowerCase();
+
+  if (!identifier || !password.value) {
     alert("Silakan isi username/email dan password.");
     return;
   }
 
-  // Simulasi login frontend
+  let account = users.value.find(
+    (user) =>
+      user.username.toLowerCase() === identifier ||
+      user.email.toLowerCase() === identifier,
+  );
+
+  if (!account) {
+    const newUsername = identifier.includes("@")
+      ? identifier.split("@")[0]
+      : identifier;
+    account = {
+      id: `customer-${Date.now()}`,
+      name: newUsername,
+      username: newUsername,
+      email: identifier.includes("@") ? identifier : `${identifier}@demo.test`,
+      role: "customer",
+      status: "Aktif",
+      joinedAt: "Baru",
+    };
+    users.value.push(account);
+  }
+
+  if (account.status !== "Aktif") {
+    alert("Akun ini sedang dinonaktifkan. Hubungi admin toko.");
+    return;
+  }
+
+  if (account.role === "admin" && password.value !== "admin123") {
+    alert("Password demo admin tidak sesuai.");
+    return;
+  }
+
   isLoggedIn.value = true;
+  currentUserId.value = account.id;
+  currentUserRole.value = account.role;
+  fullName.value = account.name;
+  activePage.value = account.role === "admin" ? "admin" : "home";
   showLogin.value = false;
   username.value = "";
   password.value = "";
@@ -353,6 +436,9 @@ function placeOrder() {
   const newOrder = {
     id: "GS-" + Date.now(),
     date: new Date().toLocaleString("id-ID"),
+    customerName: fullName.value || currentUserId.value,
+    customerEmail:
+      users.value.find((user) => user.id === currentUserId.value)?.email || "",
     items: checkoutProducts.value.map((product) => ({
       ...product,
     })),
@@ -395,6 +481,27 @@ function register() {
     return;
   }
 
+  const duplicateUser = users.value.some(
+    (user) =>
+      user.username.toLowerCase() === registerUsername.value.toLowerCase() ||
+      user.email.toLowerCase() === email.value.toLowerCase(),
+  );
+
+  if (duplicateUser) {
+    alert("Username atau email sudah terdaftar.");
+    return;
+  }
+
+  users.value.push({
+    id: `customer-${Date.now()}`,
+    name: fullName.value.trim(),
+    username: registerUsername.value.trim(),
+    email: email.value.trim().toLowerCase(),
+    role: "customer",
+    status: "Aktif",
+    joinedAt: "Baru",
+  });
+
   alert("Pendaftaran berhasil! Silakan login.");
 
   showRegister.value = false;
@@ -409,9 +516,48 @@ function register() {
 
 function logout() {
   isLoggedIn.value = false;
+  currentUserRole.value = null;
+  currentUserId.value = null;
+  fullName.value = "";
   cart.value = [];
   favorites.value = [];
   activePage.value = "home";
+}
+
+function createProduct(product) {
+  const nextId = Math.max(0, ...products.value.map((item) => item.id)) + 1;
+  products.value.push({ ...product, id: nextId });
+}
+
+function updateProduct(updatedProduct) {
+  products.value = products.value.map((product) =>
+    product.id === updatedProduct.id
+      ? { ...updatedProduct }
+      : { ...product, stock: product.stock ?? 10 },
+  );
+}
+
+function deleteProduct(productId) {
+  products.value = products.value.filter((product) => product.id !== productId);
+  cart.value = cart.value.filter((product) => product.id !== productId);
+  favorites.value = favorites.value.filter((id) => id !== productId);
+}
+
+function updateUserRole({ userId, role }) {
+  const user = users.value.find((item) => item.id === userId);
+  if (!user || user.id === currentUserId.value) return;
+  user.role = role;
+}
+
+function toggleUserStatus(userId) {
+  const user = users.value.find((item) => item.id === userId);
+  if (!user || user.id === currentUserId.value) return;
+  user.status = user.status === "Aktif" ? "Nonaktif" : "Aktif";
+}
+
+function updateOrderStatus({ orderId, status }) {
+  const order = orders.value.find((item) => item.id === orderId);
+  if (order) order.status = status;
 }
 
 function scrollProducts(direction) {
@@ -428,660 +574,100 @@ function scrollProducts(direction) {
 
 <template>
   <div class="store">
-    <!-- NAVBAR -->
-    <header class="navbar">
-      <div class="logo">
-        <div class="logo-circle">G</div>
-        <div class="logo-text">
-          <span>gan's</span>
-          <span>store</span>
-        </div>
-      </div>
-
-      <div class="navbar-main">
-        <div class="search-box">
-          <svg viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="7"></circle>
-            <path d="m16 16 5 5"></path>
-          </svg>
-
-          <input v-model="searchQuery" type="text" placeholder="Search" />
-        </div>
-
-        <nav class="category-nav">
-          <button
-            v-for="category in categories"
-            :key="category"
-            :class="{ active: activeCategory === category }"
-            @click="activeCategory = category"
-          >
-            {{ category }}
-          </button>
-        </nav>
-      </div>
-
-      <!-- GUEST MENU -->
-      <div v-if="!isLoggedIn" class="guest-actions">
-        <button class="register-btn" @click="showRegister = true">
-          ▣ Daftar
-        </button>
-
-        <span class="slash">/</span>
-
-        <button class="login-btn" @click="showLogin = true">➜ Login</button>
-      </div>
-
-      <!-- USER MENU -->
-      <div v-else class="user-actions">
-        <div class="user-info">
-          <div class="user-avatar">
-            {{ (fullName || username || "U").charAt(0).toUpperCase() }}
-          </div>
-          <span>{{ fullName || username || "User" }}</span>
-        </div>
-
-        <button class="user-btn" @click="activePage = 'wishlist'">
-          ♡ Wishlist ({{ favorites.length }})
-        </button>
-
-        <button class="user-btn" @click="activePage = 'orders'">
-          📦Orders
-        </button>
-
-        <!-- <button class="user-btn" @click="activePage = 'cart'">
-          🛒 Cart ({{ cart.length }})
-        </button> -->
-
-        <button class="user-btn" @click="activePage = 'cart'">
-          🛒 Cart ({{ cartItemCount }})
-        </button>
-
-        <button class="logout-btn" @click="logout">Logout</button>
-      </div>
-    </header>
-
-    <!-- MAIN CONTENT -->
-    <main v-if="activePage === 'home'" class="main-content">
-      <!-- HERO BANNER -->
-      <section class="hero-banner">
-        <div class="banner-illustration">
-          <svg viewBox="0 0 150 150">
-            <rect x="10" y="10" width="130" height="105" rx="12" />
-            <path d="M10 95 H140" />
-            <circle cx="75" cy="105" r="4" />
-            <path d="M55 115 L50 135 H100 L95 115" />
-            <path d="M45 48 H105 L98 83 H52 Z" />
-            <path d="M58 48 V40 A17 17 0 0 1 92 40 V48" />
-            <path d="M68 60 L72 74 M83 60 L79 74" />
-          </svg>
-        </div>
-
-        <div class="banner-content">
-          <h1>
-            Selamat Datang di<br />
-            Gan's Store!
-          </h1>
-
-          <p>
-            Temukan berbagai produk pilihan dengan kualitas terbaik <br />
-            dan harga terjangkau di gan's store!
-          </p>
-        </div>
-
-        <div class="banner-illustration">
-          <svg viewBox="0 0 150 150">
-            <path
-              d="M25 65 C5 45 20 20 45 25 C50 0 95 0 100 30 C130 15 150 50 125 70"
-            />
-            <path d="M75 40 V85 M55 68 L75 90 L95 68" />
-            <path d="M35 90 L20 105 L30 135 H120 L130 105 L115 90" />
-            <path d="M20 105 H130 M55 105 L60 135 M95 105 L90 135" />
-          </svg>
-        </div>
-      </section>
-
-      <!-- PRODUCT SECTION -->
-      <section class="product-section">
-        <div class="section-heading">
-          <div>
-            <h2>{{ activeCategory }}</h2>
-            <p>Temukan produk pilihan dari Gan's Store</p>
-          </div>
-
-          <div class="slider-controls">
-            <button @click="scrollProducts(-1)">‹</button>
-            <button @click="scrollProducts(1)">›</button>
-          </div>
-        </div>
-
-        <div
-          v-if="filteredProducts.length"
-          class="product-list"
-          :class="{ 'logged-in': isLoggedIn }"
-        >
-          <ProductCard
-            v-for="product in filteredProducts"
-            :key="product.id"
-            :product="product"
-            :favorites="favorites"
-            :is-logged-in="isLoggedIn"
-            :format-price="formatPrice"
-            @toggle-favorite="toggleFavorite"
-            @add-to-cart="addToCart"
-            @order="orderProduct"
-          />
-        </div>
-
-        <div v-else class="empty-products">
-          <h3>Produk tidak ditemukan</h3>
-          <p>Coba gunakan kata kunci atau kategori lainnya.</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- WISHLIST PAGE -->
-    <main v-if="activePage === 'wishlist'" class="main-content wishlist-page">
-      <div class="wishlist-heading">
-        <div>
-          <h2>My Wishlist</h2>
-          <p>Produk pilihan yang kamu sukai di Gan's Store.</p>
-        </div>
-
-        <button class="back-home-btn" @click="activePage = 'home'">
-          ← Kembali Belanja
-        </button>
-      </div>
-
-      <!-- Jika Wishlist memiliki produk -->
-      <div v-if="wishlistProducts.length" class="wishlist-grid">
-        <article
-          v-for="product in wishlistProducts"
-          :key="product.id"
-          class="product-card wishlist-card"
-        >
-          <div class="product-image">
-            <img
-              :src="product.image"
-              :alt="product.name"
-              @error="
-                (event) =>
-                  (event.target.src =
-                    'https://placehold.co/500x400/f1f1f1/2438d2?text=Gans+Store')
-              "
-            />
-
-            <button
-              class="favorite-btn favorited"
-              title="Hapus dari Wishlist"
-              @click="toggleFavorite(product.id)"
-            >
-              ♥
-            </button>
-          </div>
-
-          <div class="product-info">
-            <div class="product-description">
-              <h3>{{ product.name }}</h3>
-              <p v-if="product.variant">{{ product.variant }}</p>
-              <p class="product-price">
-                {{ formatPrice(product.price) }}
-              </p>
-            </div>
-
-            <div class="wishlist-actions">
-              <button class="wishlist-cart-btn" @click="addToCart(product)">
-                🛒 Tambah ke Keranjang
-              </button>
-
-              <button
-                class="wishlist-remove-btn"
-                @click="toggleFavorite(product.id)"
-                title="Hapus produk"
-              >
-                Hapus
-              </button>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <!-- Jika Wishlist kosong -->
-      <div v-else class="wishlist-empty">
-        <div class="wishlist-empty-icon">♡</div>
-
-        <h3>Wishlist Kamu Masih Kosong</h3>
-
-        <p>Belum ada produk yang kamu simpan. Yuk, temukan produk favoritmu!</p>
-
-        <button class="back-home-btn" @click="activePage = 'home'">
-          Mulai Belanja
-        </button>
-      </div>
-    </main>
-
-    <!-- CART PAGE -->
-    <main v-if="activePage === 'cart'" class="main-content cart-page">
-      <div class="cart-heading">
-        <div>
-          <h2>Keranjang Belanja</h2>
-          <p>Periksa kembali produk yang ingin kamu beli.</p>
-        </div>
-
-        <button class="back-home-btn" @click="activePage = 'home'">
-          ← Kembali Belanja
-        </button>
-      </div>
-
-      <div v-if="cartProducts.length" class="cart-layout">
-        <!-- DAFTAR PRODUK -->
-        <section class="cart-items">
-          <article
-            v-for="product in cartProducts"
-            :key="product.id"
-            class="cart-item"
-          >
-            <img
-              class="cart-item-image"
-              :src="product.image"
-              :alt="product.name"
-            />
-
-            <div class="cart-item-info">
-              <h3>{{ product.name }}</h3>
-              <p v-if="product.variant">{{ product.variant }}</p>
-              <strong>{{ formatPrice(product.price) }}</strong>
-
-              <div class="cart-item-actions">
-                <div class="quantity-control">
-                  <button type="button" @click="decreaseQuantity(product.id)">
-                    −
-                  </button>
-
-                  <span>{{ product.quantity }}</span>
-
-                  <button
-                    type="button"
-                    @click="increaseQuantity(product.id)"
-                    :disabled="product.quantity >= product.stock"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="cart-item-subtotal">
-              {{ formatPrice(product.price * product.quantity) }}
-            </div>
-          </article>
-        </section>
-
-        <!-- RINGKASAN BELANJA -->
-        <aside class="cart-summary">
-          <h3>Ringkasan Belanja</h3>
-
-          <div class="summary-row">
-            <span>Total Produk</span>
-            <span
-              >{{
-                cartProducts.reduce((total, item) => total + item.quantity, 0)
-              }}
-              item</span
-            >
-          </div>
-
-          <div class="summary-row">
-            <span>Subtotal</span>
-            <strong>{{ formatPrice(cartTotal) }}</strong>
-          </div>
-
-          <div class="summary-divider"></div>
-
-          <div class="summary-row summary-total">
-            <strong>Total Belanja</strong>
-            <strong>{{ formatPrice(cartTotal) }}</strong>
-          </div>
-
-          <button class="checkout-btn" @click="startCheckout">
-            Lanjut ke Checkout
-          </button>
-        </aside>
-      </div>
-
-      <!-- KERANJANG KOSONG -->
-      <div v-else class="cart-empty">
-        <div class="cart-empty-icon">🛒</div>
-        <h3>Keranjang Kamu Masih Kosong</h3>
-        <p>
-          Sepertinya kamu belum menambahkan produk apa pun. Yuk, temukan produk
-          menarik di Gan's Store!
-        </p>
-
-        <button class="back-home-btn" @click="activePage = 'home'">
-          Mulai Belanja
-        </button>
-      </div>
-    </main>
-
-    <!-- ADDRESS PAGE -->
-    <main v-if="activePage === 'address'" class="main-content address-page">
-      <div class="checkout-heading">
-        <div>
-          <h2>Alamat Pengiriman</h2>
-          <p>Lengkapi alamat agar pesananmu dapat dikirim dengan benar.</p>
-        </div>
-
-        <button class="back-home-btn" @click="activePage = 'cart'">
-          ← Kembali
-        </button>
-      </div>
-
-      <section class="address-form-card">
-        <h3>Informasi Penerima</h3>
-
-        <form @submit.prevent="saveAddress">
-          <div class="address-form-grid">
-            <div class="address-field">
-              <label>Nama Penerima</label>
-              <input
-                v-model="addressForm.recipient"
-                type="text"
-                placeholder="Masukkan nama penerima"
-                required
-              />
-            </div>
-
-            <div class="address-field">
-              <label>Nomor Telepon</label>
-              <input
-                v-model="addressForm.phone"
-                type="tel"
-                placeholder="Contoh: 081234567890"
-                required
-              />
-            </div>
-
-            <div class="address-field">
-              <label>Provinsi</label>
-              <input
-                v-model="addressForm.province"
-                type="text"
-                placeholder="Masukkan provinsi"
-                required
-              />
-            </div>
-
-            <div class="address-field">
-              <label>Kota / Kabupaten</label>
-              <input
-                v-model="addressForm.city"
-                type="text"
-                placeholder="Masukkan kota atau kabupaten"
-                required
-              />
-            </div>
-
-            <div class="address-field">
-              <label>Kecamatan</label>
-              <input
-                v-model="addressForm.district"
-                type="text"
-                placeholder="Masukkan kecamatan"
-                required
-              />
-            </div>
-
-            <div class="address-field">
-              <label>Kode Pos</label>
-              <input
-                v-model="addressForm.postalCode"
-                type="text"
-                placeholder="Masukkan kode pos"
-                required
-              />
-            </div>
-
-            <div class="address-field full-width">
-              <label>Detail Alamat</label>
-              <textarea
-                v-model="addressForm.detail"
-                rows="4"
-                placeholder="Nama jalan, nomor rumah, RT/RW, patokan, dan sebagainya"
-                required
-              ></textarea>
-            </div>
-          </div>
-
-          <div class="address-form-actions">
-            <button
-              type="button"
-              class="address-cancel-btn"
-              @click="cancelCheckout"
-            >
-              Batal
-            </button>
-
-            <button type="submit" class="address-save-btn">
-              Simpan Alamat
-            </button>
-          </div>
-        </form>
-      </section>
-    </main>
-
-    <!-- CHECKOUT PAGE -->
-    <main v-if="activePage === 'checkout'" class="main-content checkout-page">
-      <div class="checkout-heading">
-        <div>
-          <h2>Checkout</h2>
-          <p>Periksa kembali pesananmu sebelum melanjutkan.</p>
-        </div>
-
-        <button class="back-home-btn" @click="backToPreviousPage">
-          ← Kembali
-        </button>
-      </div>
-
-      <div class="checkout-layout">
-        <section class="checkout-left">
-          <!-- ALAMAT -->
-          <div class="checkout-card">
-            <div class="checkout-card-heading">
-              <h3>Alamat Pengiriman</h3>
-              <button @click="openAddressForm">Ubah Alamat</button>
-            </div>
-
-            <div class="saved-address">
-              <strong>{{ userAddress.recipient }}</strong>
-              <p>{{ userAddress.phone }}</p>
-              <p>
-                {{ userAddress.detail }}, {{ userAddress.district }},
-                {{ userAddress.city }}, {{ userAddress.province }},
-                {{ userAddress.postalCode }}
-              </p>
-            </div>
-          </div>
-
-          <!-- PRODUK -->
-          <div class="checkout-card">
-            <h3>Produk yang Dipesan</h3>
-
-            <div
-              v-for="product in checkoutProducts"
-              :key="product.id"
-              class="checkout-product"
-            >
-              <img :src="product.image" :alt="product.name" />
-
-              <div class="checkout-product-info">
-                <strong>{{ product.name }}</strong>
-                <p v-if="product.variant">{{ product.variant }}</p>
-                <p>{{ product.quantity }} produk</p>
-              </div>
-
-              <strong class="checkout-product-price">
-                {{ formatPrice(product.price * product.quantity) }}
-              </strong>
-            </div>
-          </div>
-
-          <!-- PEMBAYARAN -->
-          <div class="checkout-card">
-            <h3>Metode Pembayaran</h3>
-
-            <label class="payment-option">
-              <input v-model="paymentMethod" type="radio" value="COD" />
-              <span>
-                <strong>Cash on Delivery (COD)</strong>
-                <small>Bayar ketika pesanan diterima</small>
-              </span>
-            </label>
-
-            <label class="payment-option">
-              <input
-                v-model="paymentMethod"
-                type="radio"
-                value="Transfer Bank"
-              />
-              <span>
-                <strong>Transfer Bank</strong>
-                <small
-                  >Informasi pembayaran akan diberikan setelah pemesanan</small
-                >
-              </span>
-            </label>
-          </div>
-        </section>
-
-        <!-- RINGKASAN -->
-        <aside class="checkout-summary">
-          <h3>Ringkasan Pesanan</h3>
-
-          <div class="summary-row">
-            <span>Total Produk</span>
-            <span>{{ checkoutItemCount }} item</span>
-          </div>
-
-          <div class="summary-row">
-            <span>Subtotal</span>
-            <strong>{{ formatPrice(checkoutTotal) }}</strong>
-          </div>
-
-          <div class="summary-row">
-            <span>Pengiriman</span>
-            <span>Dikonfirmasi kemudian</span>
-          </div>
-
-          <div class="summary-divider"></div>
-
-          <div class="summary-row summary-total">
-            <strong>Total Belanja</strong>
-            <strong>{{ formatPrice(checkoutTotal) }}</strong>
-          </div>
-
-          <button class="checkout-btn" @click="placeOrder">Buat Pesanan</button>
-
-          <p class="checkout-note">
-            Pastikan alamat dan produk pesanan sudah benar.
-          </p>
-        </aside>
-      </div>
-    </main>
-
-    <!-- ORDER HISTORY PAGE -->
-    <main v-if="activePage === 'orders'" class="main-content orders-page">
-      <div class="orders-heading">
-        <div>
-          <h2>Pesanan Saya</h2>
-          <p>Lihat dan pantau semua pesananmu di Gan's Store.</p>
-        </div>
-
-        <button class="back-home-btn" @click="activePage = 'home'">
-          ← Kembali Belanja
-        </button>
-      </div>
-
-      <!-- JIKA ADA PESANAN -->
-      <div v-if="orders.length" class="orders-list">
-        <article v-for="order in orders" :key="order.id" class="order-card">
-          <div class="order-card-header">
-            <div>
-              <span class="order-label">Nomor Pesanan</span>
-              <strong>{{ order.id }}</strong>
-            </div>
-
-            <span class="order-status">
-              {{ order.status }}
-            </span>
-          </div>
-
-          <div class="order-date">
-            {{ order.date }}
-          </div>
-
-          <div class="order-products">
-            <div
-              v-for="(product, index) in order.items"
-              :key="product.id + '-' + index"
-              class="order-product"
-            >
-              <img :src="product.image" :alt="product.name" />
-
-              <div class="order-product-info">
-                <strong>{{ product.name }}</strong>
-                <p v-if="product.variant">{{ product.variant }}</p>
-                <p>{{ product.quantity }} produk</p>
-              </div>
-
-              <strong class="order-product-price">
-                {{ formatPrice(product.price * product.quantity) }}
-              </strong>
-            </div>
-          </div>
-
-          <div class="order-card-footer">
-            <div>
-              <span>Metode Pembayaran</span>
-              <strong>{{ order.paymentMethod }}</strong>
-            </div>
-
-            <div class="order-total">
-              <span>Total Pesanan</span>
-              <strong>{{ formatPrice(order.total) }}</strong>
-            </div>
-          </div>
-
-          <div class="order-address">
-            <strong>Alamat Pengiriman</strong>
-            <p>
-              {{ order.address.recipient }} ·
-              {{ order.address.phone }}
-            </p>
-            <p>
-              {{ order.address.detail }}, {{ order.address.district }},
-              {{ order.address.city }}, {{ order.address.province }},
-              {{ order.address.postalCode }}
-            </p>
-          </div>
-        </article>
-      </div>
-
-      <!-- JIKA BELUM ADA PESANAN -->
-      <div v-else class="orders-empty">
-        <div class="orders-empty-icon">📦</div>
-
-        <h3>Belum Ada Pesanan</h3>
-
-        <p>
-          Kamu belum memiliki riwayat pesanan. Yuk, temukan produk menarik di
-          Gan's Store!
-        </p>
-
-        <button class="back-home-btn" @click="activePage = 'home'">
-          Mulai Belanja
-        </button>
-      </div>
-    </main>
+    <StoreHeader
+      :categories="categories"
+      :search-query="searchQuery"
+      :active-category="activeCategory"
+      :is-logged-in="isLoggedIn"
+      :user-role="currentUserRole"
+      :full-name="fullName"
+      :username="username"
+      :favorite-count="favorites.length"
+      :cart-item-count="cartItemCount"
+      @update:search-query="searchQuery = $event"
+      @update:active-category="activeCategory = $event"
+      @show-login="showLogin = true"
+      @show-register="showRegister = true"
+      @navigate="activePage = $event"
+      @logout="logout"
+    />
+
+    <AdminDashboard
+      v-if="activePage === 'admin' && currentUserRole === 'admin'"
+      :products="products"
+      :users="adminUsers"
+      :orders="orders"
+      :categories="categories"
+      :format-price="formatPrice"
+      @home="activePage = 'home'"
+      @create-product="createProduct"
+      @update-product="updateProduct"
+      @delete-product="deleteProduct"
+      @update-user-role="updateUserRole"
+      @toggle-user-status="toggleUserStatus"
+      @update-order-status="updateOrderStatus"
+    />
+
+    <HomePage
+      v-if="activePage === 'home'"
+      :active-category="activeCategory"
+      :filtered-products="filteredProducts"
+      :favorites="favorites"
+      :is-logged-in="isLoggedIn"
+      :format-price="formatPrice"
+      @toggle-favorite="toggleFavorite"
+      @add-to-cart="addToCart"
+      @order="orderProduct"
+    />
+
+    <WishlistPage
+      v-if="activePage === 'wishlist'"
+      :wishlist-products="wishlistProducts"
+      :format-price="formatPrice"
+      @home="activePage = 'home'"
+      @toggle-favorite="toggleFavorite"
+      @add-to-cart="addToCart"
+    />
+
+    <CartPage
+      v-if="activePage === 'cart'"
+      :cart-products="cartProducts"
+      :cart-total="cartTotal"
+      :format-price="formatPrice"
+      @home="activePage = 'home'"
+      @decrease="decreaseQuantity"
+      @increase="increaseQuantity"
+      @checkout="startCheckout"
+    />
+
+    <AddressPage
+      v-if="activePage === 'address'"
+      :address-form="addressForm"
+      @back="activePage = 'cart'"
+      @cancel="cancelCheckout"
+      @save="saveAddress"
+    />
+
+    <CheckoutPage
+      v-if="activePage === 'checkout'"
+      :user-address="userAddress"
+      :checkout-products="checkoutProducts"
+      :checkout-item-count="checkoutItemCount"
+      :checkout-total="checkoutTotal"
+      :payment-method="paymentMethod"
+      :format-price="formatPrice"
+      @back="backToPreviousPage"
+      @edit-address="openAddressForm"
+      @update:payment-method="paymentMethod = $event"
+      @place-order="placeOrder"
+    />
+
+    <OrdersPage
+      v-if="activePage === 'orders'"
+      :orders="orders"
+      :format-price="formatPrice"
+      @home="activePage = 'home'"
+    />
 
     <!-- SUCCESS MODAL -->
     <div v-if="showSuccessModal" class="success-overlay">
@@ -1133,6 +719,9 @@ function scrollProducts(direction) {
 
       <h2>Login</h2>
       <p class="auth-subtitle">Silakan login untuk melanjutkan</p>
+      <p class="demo-admin-hint">
+        Demo admin: <strong>admin</strong> / <strong>admin123</strong>
+      </p>
 
       <form @submit.prevent="login">
         <label>Email / Username</label>
@@ -1209,12 +798,12 @@ function scrollProducts(direction) {
           placeholder="Buat password"
         />
 
-        <!-- <label>Konfirmasi Password</label>
-          <input
-            v-model="confirmPassword"
-            type="password"
-            placeholder="Ulangi password"
-          /> -->
+        <label>Konfirmasi Password</label>
+        <input
+          v-model="confirmPassword"
+          type="password"
+          placeholder="Ulangi password"
+        />
 
         <button class="auth-submit" type="submit">Daftar Sekarang</button>
       </form>
