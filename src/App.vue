@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed } from "vue";
-import { products as productData, categories } from "./data/products";
+import { ref, computed, onMounted } from "vue";
+import api from "./services/api";
 import ProductCard from "./components/product/ProductCard.vue";
 import ProductDetailModal from "./components/product/ProductDetailModal.vue";
 import StoreHeader from "./components/StoreHeader.vue";
@@ -15,6 +15,7 @@ import AdminDashboard from "./components/admin/AdminDashboard.vue";
 const isLoggedIn = ref(false);
 const currentUserRole = ref(null);
 const currentUserId = ref(null);
+const authToken = ref("");
 const showLogin = ref(false);
 const showRegister = ref(false);
 
@@ -25,6 +26,7 @@ const email = ref("");
 const registerUsername = ref("");
 const registerPassword = ref("");
 const confirmPassword = ref("");
+const isAuthChecking = ref(true);
 
 const searchQuery = ref("");
 const activeCategory = ref("Best Seller");
@@ -32,41 +34,86 @@ const favorites = ref([]);
 const cart = ref([]);
 const activePage = ref("home");
 const orders = ref([]);
-const users = ref([
-  {
-    id: "admin-001",
-    name: "Admin Gan's Store",
-    username: "admin",
-    email: "admin@gansstore.test",
-    role: "admin",
-    status: "Aktif",
-    joinedAt: "Admin",
-  },
-  {
-    id: "customer-001",
-    name: "Alya Putri",
-    username: "alya",
-    email: "alya@example.test",
-    role: "customer",
-    status: "Aktif",
-    joinedAt: "Demo",
-  },
-  {
-    id: "customer-002",
-    name: "Bima Pratama",
-    username: "bima",
-    email: "bima@example.test",
-    role: "customer",
-    status: "Aktif",
-    joinedAt: "Demo",
-  },
-]);
+const users = ref([]);
 
 const showProductDetail = ref(false);
 const selectedProduct = ref(null);
 const selectedQuantity = ref(1);
 
-const products = ref(productData);
+const products = ref([]);
+const adminProducts = ref([]);
+const categories = ref([]);
+const adminCategories = ref([]);
+const isProductsLoading = ref(false);
+
+async function fetchProducts() {
+  isProductsLoading.value = true;
+
+  try {
+    const response = await api.get("/products");
+
+    products.value = response.data.products.map((product) => ({
+      ...product,
+      category: product.category?.name || "",
+      bestseller: Boolean(product.bestseller),
+      stock: Number(product.stock),
+      price: Number(product.price),
+    }));
+  } catch (error) {
+    console.error("Fetch products error:", error);
+    alert("Gagal mengambil data produk.");
+  } finally {
+    isProductsLoading.value = false;
+  }
+}
+
+async function fetchAdminProducts() {
+  if (currentUserRole.value !== "admin") return;
+
+  try {
+    const response = await api.get("/admin/products");
+
+    adminProducts.value = response.data.products.map((product) => ({
+      ...product,
+      category: product.category?.name || "",
+      bestseller: Boolean(product.bestseller),
+      stock: Number(product.stock),
+      price: Number(product.price),
+    }));
+  } catch (error) {
+    console.error("Fetch admin products error:", error);
+
+    alert(
+      error.response?.data?.message || "Gagal mengambil data produk admin.",
+    );
+  }
+}
+
+async function fetchCategories() {
+  try {
+    const response = await api.get("/categories");
+
+    categories.value = [
+      "Best Seller",
+      ...response.data.categories.map((category) => category.name),
+    ];
+  } catch (error) {
+    console.error("Fetch categories error:", error);
+  }
+}
+
+async function fetchAdminCategories() {
+  if (currentUserRole.value !== "admin") return;
+
+  try {
+    const response = await api.get("/admin/categories");
+
+    adminCategories.value = response.data.categories;
+  } catch (error) {
+    console.error("Fetch admin categories error:", error);
+  }
+}
+
 const directCheckoutProduct = ref(null);
 
 // Data alamat pengguna
@@ -174,6 +221,32 @@ const adminUsers = computed(() =>
     isCurrentUser: user.id === currentUserId.value,
   })),
 );
+
+async function fetchAdminUsers() {
+  if (currentUserRole.value !== "admin") return;
+
+  try {
+    const response = await api.get("/admin/users");
+
+    users.value = response.data.users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      status: user.is_active ? "Aktif" : "Nonaktif",
+      joinedAt: user.created_at
+        ? new Date(user.created_at).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : "-",
+    }));
+  } catch (error) {
+    console.error("Fetch admin users error:", error);
+  }
+}
 
 function orderProduct(product) {
   if (!isLoggedIn.value) {
@@ -321,54 +394,71 @@ function decreaseQuantity(productId) {
   }
 }
 
-function login() {
-  const identifier = username.value.trim().toLowerCase();
+async function login() {
+  const identifier = username.value.trim();
 
   if (!identifier || !password.value) {
     alert("Silakan isi username/email dan password.");
     return;
   }
 
-  let account = users.value.find(
-    (user) =>
-      user.username.toLowerCase() === identifier ||
-      user.email.toLowerCase() === identifier,
-  );
+  try {
+    const response = await api.post("/login", {
+      identifier: identifier,
+      password: password.value,
+    });
 
-  if (!account) {
-    const newUsername = identifier.includes("@")
-      ? identifier.split("@")[0]
-      : identifier;
-    account = {
-      id: `customer-${Date.now()}`,
-      name: newUsername,
-      username: newUsername,
-      email: identifier.includes("@") ? identifier : `${identifier}@demo.test`,
-      role: "customer",
-      status: "Aktif",
-      joinedAt: "Baru",
-    };
-    users.value.push(account);
+    const user = response.data.user;
+    const token = response.data.token;
+
+    // Simpan token autentikasi
+    authToken.value = token;
+
+    localStorage.setItem("gans_store_token", token);
+    // Gunakan token untuk request berikutnya
+    api.defaults.headers.common.Authorization = `Bearer ${token}`;
+
+    // Simpan data user yang sedang login
+    isLoggedIn.value = true;
+    currentUserId.value = user.id;
+    currentUserRole.value = user.role;
+    fullName.value = user.name;
+
+    // Masukkan user ke data lokal jika belum tersedia
+    const existingUser = users.value.find((item) => item.id === user.id);
+
+    if (!existingUser) {
+      users.value.push({
+        ...user,
+        status: "Aktif",
+        joinedAt: "Baru",
+      });
+    }
+
+    // Arahkan berdasarkan role
+    activePage.value = user.role === "admin" ? "admin" : "home";
+    if (user.role === "admin") {
+      await Promise.all([
+        fetchAdminUsers(),
+        fetchAdminProducts(),
+        fetchAdminCategories(),
+      ]);
+    }
+    showLogin.value = false;
+
+    username.value = "";
+    password.value = "";
+
+    alert("Login berhasil! Selamat datang di Gan's Store.");
+  } catch (error) {
+    console.error("Login error:", error);
+
+    const message =
+      error.response?.data?.message ||
+      "Login gagal. Periksa username/email dan password.";
+
+    alert(message);
   }
-
-  if (account.status !== "Aktif") {
-    alert("Akun ini sedang dinonaktifkan. Hubungi admin toko.");
-    return;
-  }
-
-  if (account.role === "admin" && password.value !== "admin123") {
-    alert("Password demo admin tidak sesuai.");
-    return;
-  }
-
-  isLoggedIn.value = true;
-  currentUserId.value = account.id;
-  currentUserRole.value = account.role;
-  fullName.value = account.name;
-  activePage.value = account.role === "admin" ? "admin" : "home";
-  showLogin.value = false;
-  username.value = "";
-  password.value = "";
 }
 
 function openAddressForm() {
@@ -464,11 +554,11 @@ function finishOrder() {
   activePage.value = "home";
 }
 
-function register() {
+async function register() {
   if (
-    !fullName.value ||
-    !email.value ||
-    !registerUsername.value ||
+    !fullName.value.trim() ||
+    !email.value.trim() ||
+    !registerUsername.value.trim() ||
     !registerPassword.value ||
     !confirmPassword.value
   ) {
@@ -481,78 +571,257 @@ function register() {
     return;
   }
 
-  const duplicateUser = users.value.some(
-    (user) =>
-      user.username.toLowerCase() === registerUsername.value.toLowerCase() ||
-      user.email.toLowerCase() === email.value.toLowerCase(),
-  );
+  try {
+    await api.post("/register", {
+      name: fullName.value.trim(),
+      username: registerUsername.value.trim(),
+      email: email.value.trim().toLowerCase(),
+      password: registerPassword.value,
+      password_confirmation: confirmPassword.value,
+    });
 
-  if (duplicateUser) {
-    alert("Username atau email sudah terdaftar.");
+    alert("Pendaftaran berhasil! Silakan login.");
+
+    showRegister.value = false;
+    showLogin.value = true;
+
+    // Kosongkan form registrasi
+    fullName.value = "";
+    email.value = "";
+    registerUsername.value = "";
+    registerPassword.value = "";
+    confirmPassword.value = "";
+  } catch (error) {
+    console.error("Register error:", error);
+
+    const errors = error.response?.data?.errors;
+
+    if (errors) {
+      const firstError = Object.values(errors).flat()[0];
+      alert(firstError);
+    } else {
+      alert(
+        error.response?.data?.message ||
+          "Pendaftaran gagal. Silakan coba lagi.",
+      );
+    }
+  }
+}
+
+async function logout() {
+  try {
+    if (authToken.value) {
+      await api.post("/logout");
+    }
+  } catch (error) {
+    console.error("Logout error:", error);
+  } finally {
+    // Hapus token autentikasi
+    authToken.value = "";
+    localStorage.removeItem("gans_store_token");
+    delete api.defaults.headers.common.Authorization;
+
+    // Reset data login
+    isLoggedIn.value = false;
+    currentUserRole.value = null;
+    currentUserId.value = null;
+    fullName.value = "";
+
+    // Reset data sementara pengguna
+    cart.value = [];
+    favorites.value = [];
+
+    activePage.value = "home";
+
+    alert("Kamu berhasil logout.");
+  }
+}
+
+async function restoreAuth() {
+  const savedToken = localStorage.getItem("gans_store_token");
+
+  if (!savedToken) {
+    isAuthChecking.value = false;
     return;
   }
 
-  users.value.push({
-    id: `customer-${Date.now()}`,
-    name: fullName.value.trim(),
-    username: registerUsername.value.trim(),
-    email: email.value.trim().toLowerCase(),
-    role: "customer",
-    status: "Aktif",
-    joinedAt: "Baru",
-  });
+  try {
+    authToken.value = savedToken;
 
-  alert("Pendaftaran berhasil! Silakan login.");
+    api.defaults.headers.common.Authorization = `Bearer ${savedToken}`;
 
-  showRegister.value = false;
-  showLogin.value = true;
+    const response = await api.get("/user");
+    const user = response.data;
 
-  fullName.value = "";
-  email.value = "";
-  registerUsername.value = "";
-  registerPassword.value = "";
-  confirmPassword.value = "";
+    isLoggedIn.value = true;
+    currentUserId.value = user.id;
+    currentUserRole.value = user.role;
+    fullName.value = user.name;
+
+    activePage.value = user.role === "admin" ? "admin" : "home";
+
+    // Ambil ulang data pengguna jika yang login adalah admin
+    if (user.role === "admin") {
+      await Promise.all([
+        fetchAdminUsers(),
+        fetchAdminProducts(),
+        fetchAdminCategories(),
+      ]);
+    }
+  } catch (error) {
+    console.error("Restore authentication error:", error);
+
+    authToken.value = "";
+    localStorage.removeItem("gans_store_token");
+
+    delete api.defaults.headers.common.Authorization;
+
+    isLoggedIn.value = false;
+    currentUserRole.value = null;
+    currentUserId.value = null;
+    fullName.value = "";
+  } finally {
+    isAuthChecking.value = false;
+  }
 }
 
-function logout() {
-  isLoggedIn.value = false;
-  currentUserRole.value = null;
-  currentUserId.value = null;
-  fullName.value = "";
-  cart.value = [];
-  favorites.value = [];
-  activePage.value = "home";
-}
+onMounted(async () => {
+  await Promise.all([fetchProducts(), fetchCategories()]);
+
+  await restoreAuth();
+});
 
 function createProduct(product) {
-  const nextId = Math.max(0, ...products.value.map((item) => item.id)) + 1;
-  products.value.push({ ...product, id: nextId });
+  saveProductToBackend(product);
 }
 
-function updateProduct(updatedProduct) {
-  products.value = products.value.map((product) =>
-    product.id === updatedProduct.id
-      ? { ...updatedProduct }
-      : { ...product, stock: product.stock ?? 10 },
-  );
+function updateProduct(product) {
+  saveProductToBackend(product, true);
 }
 
-function deleteProduct(productId) {
-  products.value = products.value.filter((product) => product.id !== productId);
-  cart.value = cart.value.filter((product) => product.id !== productId);
-  favorites.value = favorites.value.filter((id) => id !== productId);
+async function saveProductToBackend(product, isUpdate = false) {
+  try {
+    const selectedCategory = adminCategories.value.find(
+      (category) => category.name === product.category,
+    );
+
+    if (!selectedCategory) {
+      alert("Kategori produk tidak ditemukan.");
+      return;
+    }
+
+    const formData = new FormData();
+
+    formData.append("name", product.name);
+    formData.append("variant", product.variant || "");
+    formData.append("category_id", selectedCategory.id);
+    formData.append("price", product.price);
+    formData.append("stock", product.stock);
+    formData.append("bestseller", product.bestseller ? "1" : "0");
+    formData.append("description", product.description || "");
+
+    if (product.imageFile) {
+      console.log("Detail file gambar:", {
+        file: product.imageFile,
+        name: product.imageFile.name,
+        type: product.imageFile.type,
+        size: product.imageFile.size,
+        isFile: product.imageFile instanceof File,
+      });
+
+      formData.append("image", product.imageFile);
+    }
+
+    console.log("FormData image:", formData.get("image"));
+
+    if (isUpdate) {
+      formData.append("_method", "PUT");
+
+      await api.post(`/admin/products/${product.id}`, formData);
+    } else {
+      await api.post("/admin/products", formData);
+    }
+
+    await Promise.all([fetchAdminProducts(), fetchProducts()]);
+
+    alert(
+      isUpdate ? "Produk berhasil diperbarui." : "Produk berhasil ditambahkan.",
+    );
+  } catch (error) {
+    console.error("Save product error:", error);
+
+    const errors = error.response?.data?.errors;
+
+    if (errors) {
+      alert(Object.values(errors).flat()[0]);
+    } else {
+      alert(error.response?.data?.message || "Gagal menyimpan produk.");
+    }
+  }
 }
 
-function updateUserRole({ userId, role }) {
+async function deleteProduct(productId) {
+  if (!window.confirm("Yakin ingin menghapus produk ini?")) {
+    return;
+  }
+
+  try {
+    await api.delete(`/admin/products/${productId}`);
+
+    await Promise.all([fetchAdminProducts(), fetchProducts()]);
+
+    cart.value = cart.value.filter((product) => product.id !== productId);
+
+    favorites.value = favorites.value.filter((id) => id !== productId);
+
+    alert("Produk berhasil dihapus.");
+  } catch (error) {
+    console.error("Delete product error:", error);
+
+    alert(error.response?.data?.message || "Gagal menghapus produk.");
+  }
+}
+
+async function updateUserRole({ userId, role }) {
   const user = users.value.find((item) => item.id === userId);
+
   if (!user || user.id === currentUserId.value) return;
-  user.role = role;
+
+  try {
+    const response = await api.patch(`/admin/users/${userId}/role`, { role });
+
+    user.role = response.data.user.role;
+
+    alert("Role pengguna berhasil diperbarui.");
+  } catch (error) {
+    console.error("Update user role error:", error);
+
+    alert(error.response?.data?.message || "Gagal memperbarui role pengguna.");
+  }
 }
 
-function toggleUserStatus(userId) {
+async function toggleUserStatus(userId) {
   const user = users.value.find((item) => item.id === userId);
+
   if (!user || user.id === currentUserId.value) return;
-  user.status = user.status === "Aktif" ? "Nonaktif" : "Aktif";
+
+  const newStatus = user.status !== "Aktif";
+
+  try {
+    const response = await api.patch(`/admin/users/${userId}/status`, {
+      is_active: newStatus,
+    });
+
+    user.status = response.data.user.is_active ? "Aktif" : "Nonaktif";
+
+    alert("Status pengguna berhasil diperbarui.");
+  } catch (error) {
+    console.error("Toggle user status error:", error);
+
+    alert(
+      error.response?.data?.message || "Gagal memperbarui status pengguna.",
+    );
+  }
 }
 
 function updateOrderStatus({ orderId, status }) {
@@ -573,7 +842,15 @@ function scrollProducts(direction) {
 </script>
 
 <template>
-  <div class="store">
+  <!-- AUTHENTICATION LOADING -->
+  <div v-if="isAuthChecking" class="auth-loading">
+    <div class="auth-loading-content">
+      <div class="auth-spinner"></div>
+      <p>Memeriksa sesi akun...</p>
+    </div>
+  </div>
+
+  <div v-else class="store">
     <StoreHeader
       v-if="activePage !== 'admin'"
       :categories="categories"
@@ -595,7 +872,7 @@ function scrollProducts(direction) {
 
     <AdminDashboard
       v-if="activePage === 'admin' && currentUserRole === 'admin'"
-      :products="products"
+      :products="adminProducts"
       :users="adminUsers"
       :orders="orders"
       :categories="categories"

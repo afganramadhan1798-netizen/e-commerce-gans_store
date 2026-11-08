@@ -46,7 +46,15 @@ const emit = defineEmits([
       </button>
 
       <div class="product-detail-image">
-        <img :src="product.image" :alt="product.name" />
+        <img
+          :src="product.image_url || product.image"
+          :alt="product.name"
+          @error="
+            (event) =>
+              (event.target.src =
+                'https://placehold.co/500x400/f1f1f1/2438d2?text=Gans+Store')
+          "
+        />
       </div>
 
       <div class="product-detail-content">

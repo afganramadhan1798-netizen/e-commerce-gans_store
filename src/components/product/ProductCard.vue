@@ -25,7 +25,7 @@ const emit = defineEmits(["toggle-favorite", "add-to-cart", "order"]);
   <article class="product-card">
     <div class="product-image">
       <img
-        :src="product.image"
+        :src="product.image_url || product.image"
         :alt="product.name"
         @error="
           (event) =>
@@ -33,6 +33,7 @@ const emit = defineEmits(["toggle-favorite", "add-to-cart", "order"]);
               'https://placehold.co/500x400/f1f1f1/2438d2?text=Gans+Store')
         "
       />
+
 
       <button
         class="favorite-btn"

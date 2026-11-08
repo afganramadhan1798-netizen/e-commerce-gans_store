@@ -18,6 +18,10 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  categoryRecords: {
+    type: Array,
+    default: () => [],
+  },
   formatPrice: {
     type: Function,
     required: true,
@@ -45,6 +49,9 @@ const productDialogOpen = ref(false);
 const editingProductId = ref(null);
 const productForm = ref(createEmptyProduct());
 
+const selectedImage = ref(null);
+const imagePreview = ref("");
+
 const categoryOptions = computed(() =>
   props.categories.filter((category) => category !== "Best Seller"),
 );
@@ -60,7 +67,7 @@ const filteredProducts = computed(() => {
   if (!query) return uniqueProducts.value;
 
   return uniqueProducts.value.filter((product) =>
-    `${product.name} ${product.variant || ""} ${product.category}`
+    `${product.name} ${product.variant || ""} ${product.category || ""}`
       .toLowerCase()
       .includes(query),
   );
@@ -88,6 +95,7 @@ function createEmptyProduct() {
     price: 0,
     category: "",
     image: "",
+    imageFile: null,
     bestseller: false,
     stock: 0,
     description: "",
@@ -100,13 +108,48 @@ function openCreateProduct() {
     ...createEmptyProduct(),
     category: categoryOptions.value[0] || "",
   };
+
+  selectedImage.value = null;
+  imagePreview.value = "";
   productDialogOpen.value = true;
 }
 
 function openEditProduct(product) {
   editingProductId.value = product.id;
-  productForm.value = { ...createEmptyProduct(), ...product };
+  productForm.value = {
+    ...createEmptyProduct(),
+    ...product,
+    category: product.category || product.category?.name || "",
+    is_active: Boolean(product.is_active),
+  };
+
+  selectedImage.value = null;
+  imagePreview.value = product.image_url || product.image || "";
   productDialogOpen.value = true;
+}
+
+function handleImageChange(event) {
+  productForm.value.imageFile = event.target.files?.[0] || null;
+
+  console.log("File gambar:", productForm.value.imageFile);
+  if (!file) return;
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+  if (!allowedTypes.includes(file.type)) {
+    alert("Format gambar harus JPG, PNG, atau WEBP.");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > 2 * 1024 * 1024) {
+    alert("Ukuran gambar maksimal 2 MB.");
+    event.target.value = "";
+    return;
+  }
+
+  selectedImage.value = file;
+  imagePreview.value = URL.createObjectURL(file);
 }
 
 function saveProduct() {
@@ -248,7 +291,13 @@ function setOrderStatus(orderId, status) {
               <tr v-for="product in filteredProducts" :key="product.id">
                 <td>
                   <div class="admin-product-cell">
-                    <img :src="product.image" :alt="product.name" />
+                    <img
+                      :src="
+                        product.image_url ||
+                        'https://placehold.co/500x400/f1f1f1/2438d2?text=Gans+Store'
+                      "
+                      :alt="product.name"
+                    />
                     <div>
                       <strong>{{ product.name }}</strong>
                       <small v-if="product.variant">{{
@@ -516,15 +565,34 @@ function setOrderStatus(orderId, status) {
               Tampilkan sebagai best seller
             </label>
           </div>
-          <label>
-            URL gambar
-            <input
-              v-model.trim="productForm.image"
-              type="text"
-              placeholder="https://... atau /images/..."
-              required
-            />
+
+          <label class="admin-check-field">
+            <input v-model="productForm.is_active" type="checkbox" />
+            Produk aktif dan tampil di toko
           </label>
+
+          <label>
+            Gambar produk
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/jpg,image/webp"
+              @change="handleImageChange"
+            />
+            <small v-if="productForm.imageFile">
+              {{ productForm.imageFile.name }}
+            </small>
+            <small
+              v-else-if="editingProductId !== null && productForm.image_url"
+            >
+              Gambar saat ini sudah tersimpan. Pilih file baru jika ingin
+              menggantinya.
+            </small>
+          </label>
+
+          <div v-if="imagePreview" class="admin-image-preview">
+            <img :src="imagePreview" alt="Preview gambar produk" />
+          </div>
+
           <label>
             Deskripsi
             <textarea
