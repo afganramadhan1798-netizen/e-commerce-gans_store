@@ -210,7 +210,14 @@ function closeOrderDetail() {
 const productSearch = ref("");
 const productDialogOpen = ref(false);
 const editingProductId = ref(null);
-const productForm = ref(createEmptyProduct());
+const productForm = ref({
+  name: "",
+  description: "",
+  price: "",
+  stock: "",
+  category_id: "",
+  image: null,
+});
 
 const selectedImage = ref(null);
 const imagePreview = ref("");
