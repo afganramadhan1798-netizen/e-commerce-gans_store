@@ -14,7 +14,13 @@ defineProps({
   },
 });
 
-const emit = defineEmits(["home", "decrease", "increase", "checkout"]);
+const emit = defineEmits([
+  "home",
+  "decrease",
+  "increase",
+  "remove",
+  "checkout",
+]);
 </script>
 
 <template>
@@ -65,7 +71,17 @@ const emit = defineEmits(["home", "decrease", "increase", "checkout"]);
           </div>
 
           <div class="cart-item-subtotal">
-            {{ formatPrice(product.price * product.quantity) }}
+            <strong>
+              {{ formatPrice(product.price * product.quantity) }}
+            </strong>
+
+            <button
+              type="button"
+              class="remove-cart-btn"
+              @click="emit('remove', product.id)"
+            >
+              Hapus
+            </button>
           </div>
         </article>
       </section>

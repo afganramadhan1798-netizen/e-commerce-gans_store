@@ -417,53 +417,47 @@ button {
   line-height: 1;
 }
 
+/* =========================
+   PRODUCT LIST
+========================= */
+
+/* Sebelum login: grid 2 kolom */
 .product-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px 15px;
   padding: 3px 3px 15px;
+  width: 100%;
   overflow: visible;
 }
 
-/* =========================
-   PRODUCT HORIZONTAL SLIDER
-   AFTER LOGIN
-========================= */
-
+/* Sesudah login: horizontal scroll, maksimal 2 baris */
 .product-list.logged-in {
   display: grid;
-
-  /* Maksimal 2 baris */
-  grid-template-rows: repeat(2, auto);
-
-  /* Susun produk ke samping */
   grid-auto-flow: column;
-
-  /* Lebar setiap kolom */
-  grid-auto-columns: calc((100% - 15px) / 2);
-
-  /* Jarak antarproduk */
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-columns: minmax(0, calc((100% - 15px) / 2));
   gap: 20px 15px;
 
-  /* Scroll horizontal */
+  width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
 
   padding: 3px 3px 15px;
-
   scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: var(--primary) #eeeeee;
 }
 
-/* Pastikan card memenuhi kolom */
-.product-list.logged-in .product-card {
+/* Semua kartu memiliki ukuran konsisten */
+.product-list .product-card {
   width: 100%;
   min-width: 0;
   height: 100%;
 }
 
-/* Tampilan scrollbar Chrome dan Edge */
+/* Scrollbar Chrome dan Edge */
 .product-list.logged-in::-webkit-scrollbar {
   height: 7px;
 }
@@ -484,9 +478,14 @@ button {
 
 /* Responsive */
 @media (max-width: 650px) {
+  .product-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px 10px;
+  }
+
   .product-list.logged-in {
     grid-template-rows: repeat(2, auto);
-    grid-auto-columns: calc((100% - 10px) / 2);
+    grid-auto-columns: minmax(0, 80%);
     gap: 15px 10px;
   }
 }
@@ -528,8 +527,11 @@ button {
 }
 
 .product-card {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
+  height: 100%;
   border: 1px solid #777;
   border-radius: 7px;
   overflow: hidden;
@@ -548,16 +550,27 @@ button {
 .product-image {
   width: 100%;
   aspect-ratio: 500 / 350;
-  height: auto;
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
   background: #f3f3f3;
 }
 
 .product-image img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.product-info {
+  flex: 1;
+  min-height: 110px;
+  padding: 13px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .favorite-btn {
@@ -1234,19 +1247,12 @@ button {
   text-align: center;
 }
 
-.cart-remove-btn {
-  border: none;
-  background: transparent;
-  color: #e34b70;
-  font-size: 12px;
-  cursor: pointer;
-}
-
 .cart-item-subtotal {
-  color: #222;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
 }
 
 .cart-summary {
@@ -2200,41 +2206,41 @@ button {
 }
 
 .auth-loading {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #f8f9fc;
-    z-index: 9999;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fc;
+  z-index: 9999;
 }
 
 .auth-loading-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 
 .auth-spinner {
-    width: 38px;
-    height: 38px;
-    border: 4px solid #e0e7ff;
-    border-top-color: #397cfa;
-    border-radius: 50%;
-    animation: auth-spin 0.8s linear infinite;
+  width: 38px;
+  height: 38px;
+  border: 4px solid #e0e7ff;
+  border-top-color: #397cfa;
+  border-radius: 50%;
+  animation: auth-spin 0.8s linear infinite;
 }
 
 .auth-loading-content p {
-    color: #64748b;
-    font-size: 14px;
-    font-weight: 500;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 @keyframes auth-spin {
-    to {
-        transform: rotate(360deg);
-    }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .admin-image-preview img {
@@ -2243,4 +2249,48 @@ button {
   border-radius: 6px;
   object-fit: cover;
   background: #f1f3f7;
+}
+
+.admin-category-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-category-summary > div {
+  display: grid;
+  gap: 6px;
+  padding: 15px;
+  border: 1px solid #e1e5ed;
+  border-radius: 6px;
+  background: #f8f9fc;
+}
+
+.admin-category-summary span {
+  color: #69758a;
+  font-size: 12px;
+}
+
+.admin-category-summary strong {
+  color: #2438d2;
+  font-size: 22px;
+}
+
+.remove-cart-btn {
+  padding: 7px 13px;
+  border: 1px solid #ef4444;
+  border-radius: 7px;
+  background: white;
+  color: #ef4444;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.remove-cart-btn:hover {
+  background: #ef4444;
+  color: white;
 }

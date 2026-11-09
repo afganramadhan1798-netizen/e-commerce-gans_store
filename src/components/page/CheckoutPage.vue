@@ -48,8 +48,14 @@ const emit = defineEmits([
       <section class="checkout-left">
         <div class="checkout-card">
           <div class="checkout-card-heading">
-            <h3>Alamat Pengiriman</h3>
-            <button @click="emit('edit-address')">Ubah Alamat</button>
+            <div>
+              <h3>Alamat Pengiriman</h3>
+              <small class="saved-address-status">
+                ✓ Alamat utama tersimpan
+              </small>
+            </div>
+
+            <button @click="emit('edit-address')">Edit Alamat</button>
           </div>
           <div class="saved-address">
             <strong>{{ userAddress.recipient }}</strong>

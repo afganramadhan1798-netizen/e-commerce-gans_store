@@ -4,19 +4,19 @@ import { computed, ref } from "vue";
 const props = defineProps({
   products: {
     type: Array,
-    required: true,
+    default: () => [],
   },
   users: {
     type: Array,
-    required: true,
+    default: () => [],
   },
   orders: {
     type: Array,
-    required: true,
+    default: () => [],
   },
   categories: {
     type: Array,
-    required: true,
+    default: () => [],
   },
   categoryRecords: {
     type: Array,
@@ -41,9 +41,172 @@ const emit = defineEmits([
   "update-user-role",
   "toggle-user-status",
   "update-order-status",
+
+  // Manajemen kategori
+  "create-category",
+  "update-category",
+  "delete-category",
 ]);
 
+const adminDialog = ref({
+  open: false,
+  type: "alert",
+  title: "",
+  message: "",
+  confirmText: "Ya, Lanjutkan",
+  onConfirm: null,
+});
+
+function showAdminAlert(message, title = "Informasi") {
+  adminDialog.value = {
+    open: true,
+    type: "alert",
+    title,
+    message,
+    confirmText: "Mengerti",
+    onConfirm: null,
+  };
+}
+
+function showAdminConfirm(message, onConfirm, title = "Konfirmasi") {
+  adminDialog.value = {
+    open: true,
+    type: "confirm",
+    title,
+    message,
+    confirmText: "Ya, Lanjutkan",
+    onConfirm,
+  };
+}
+
+function closeAdminDialog() {
+  adminDialog.value.open = false;
+}
+
+function confirmAdminDialog() {
+  const action = adminDialog.value.onConfirm;
+
+  closeAdminDialog();
+  action?.();
+}
+
+// STATE KATEGORI
+const categorySearch = ref("");
+const categoryDialogOpen = ref(false);
+const editingCategoryId = ref(null);
+
+const categoryForm = ref({
+  name: "",
+  description: "",
+  is_active: true,
+});
+
+// FILTER KATEGORI
+const filteredCategories = computed(() => {
+  const keyword = categorySearch.value.trim().toLowerCase();
+
+  if (!keyword) {
+    return props.categoryRecords;
+  }
+
+  return props.categoryRecords.filter((category) =>
+    `${category.name} ${category.description || ""}`
+      .toLowerCase()
+      .includes(keyword),
+  );
+});
+
+// MENGHITUNG KATEGORI AKTIF
+const activeCategoryCount = computed(() => {
+  return props.categoryRecords.filter((category) => category.is_active).length;
+});
+
+// FORM KATEGORI KOSONG
+function createEmptyCategory() {
+  return {
+    name: "",
+    description: "",
+    is_active: true,
+  };
+}
+
+// MEMBUKA FORM TAMBAH KATEGORI
+function openCreateCategory() {
+  editingCategoryId.value = null;
+  categoryForm.value = createEmptyCategory();
+  categoryDialogOpen.value = true;
+}
+
+// MEMBUKA FORM EDIT KATEGORI
+function openEditCategory(category) {
+  editingCategoryId.value = category.id;
+
+  categoryForm.value = {
+    name: category.name,
+    description: category.description || "",
+    is_active: Boolean(category.is_active),
+  };
+
+  categoryDialogOpen.value = true;
+}
+
+// MENYIMPAN KATEGORI
+function saveCategory() {
+  const name = categoryForm.value.name.trim();
+
+  if (!name) {
+    showAdminAlert("Nama kategori wajib diisi.", "Data Belum Lengkap");
+    return;
+  }
+
+  const categoryData = {
+    name,
+    description: categoryForm.value.description.trim(),
+    is_active: categoryForm.value.is_active,
+  };
+
+  if (editingCategoryId.value !== null) {
+    emit("update-category", {
+      id: editingCategoryId.value,
+      ...categoryData,
+    });
+  } else {
+    emit("create-category", categoryData);
+  }
+
+  categoryDialogOpen.value = false;
+}
+
+// MENGUBAH STATUS KATEGORI
+function toggleCategoryStatus(category) {
+  emit("update-category", {
+    id: category.id,
+    name: category.name,
+    description: category.description || "",
+    is_active: !category.is_active,
+  });
+}
+
+// MENGHAPUS KATEGORI
+function deleteCategory(category) {
+  showAdminConfirm(
+    `Apakah kamu yakin ingin menghapus kategori "${category.name}"?`,
+    () => emit("delete-category", category.id),
+    "Hapus Kategori",
+  );
+}
+
 const activeTab = ref("products");
+const selectedOrder = ref(null);
+
+function openOrderDetail(order) {
+  selectedOrder.value = order;
+}
+
+function closeOrderDetail() {
+  selectedOrder.value = null;
+}
+
 const productSearch = ref("");
 const productDialogOpen = ref(false);
 const editingProductId = ref(null);
@@ -52,9 +215,15 @@ const productForm = ref(createEmptyProduct());
 const selectedImage = ref(null);
 const imagePreview = ref("");
 
-const categoryOptions = computed(() =>
-  props.categories.filter((category) => category !== "Best Seller"),
-);
+const categoryOptions = computed(() => {
+  if (props.categoryRecords.length > 0) {
+    return props.categoryRecords
+      .filter((category) => category.is_active)
+      .map((category) => category.name);
+  }
+
+  return props.categories.filter((category) => category !== "Best Seller");
+});
 
 const uniqueProducts = computed(() =>
   [
@@ -128,26 +297,39 @@ function openEditProduct(product) {
   productDialogOpen.value = true;
 }
 
+const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
 function handleImageChange(event) {
-  productForm.value.imageFile = event.target.files?.[0] || null;
+  const file = event.target.files?.[0] || null;
 
-  console.log("File gambar:", productForm.value.imageFile);
-  if (!file) return;
-
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  if (!file) {
+    productForm.value.imageFile = null;
+    selectedImage.value = null;
+    return;
+  }
 
   if (!allowedTypes.includes(file.type)) {
-    alert("Format gambar harus JPG, PNG, atau WEBP.");
+    showAdminAlert(
+      "Format gambar harus JPG, PNG, atau WEBP.",
+      "Format Gambar Tidak Valid",
+    );
+
     event.target.value = "";
+    productForm.value.imageFile = null;
     return;
   }
 
   if (file.size > 2 * 1024 * 1024) {
-    alert("Ukuran gambar maksimal 2 MB.");
+    showAdminAlert(
+      "Ukuran gambar maksimal 2 MB. Silakan pilih gambar yang lebih kecil.",
+      "Ukuran Gambar Terlalu Besar",
+    );
+
     event.target.value = "";
+    productForm.value.imageFile = null;
     return;
   }
 
+  productForm.value.imageFile = file;
   selectedImage.value = file;
   imagePreview.value = URL.createObjectURL(file);
 }
@@ -172,17 +354,27 @@ function saveProduct() {
 }
 
 function deleteProduct(product) {
-  if (
-    window.confirm(
-      `Hapus ${product.name}${product.variant ? ` - ${product.variant}` : ""}?`,
-    )
-  ) {
-    emit("delete-product", product.id);
-  }
+  showAdminConfirm(
+    `Hapus ${product.name}${product.variant ? ` - ${product.variant}` : ""} dari katalog toko?`,
+    () => emit("delete-product", product.id),
+    "Hapus Produk",
+  );
 }
 
 function setOrderStatus(orderId, status) {
   emit("update-order-status", { orderId, status });
+}
+
+function formatOrderDate(date) {
+  if (!date) return "-";
+
+  return new Date(date).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 </script>
 
@@ -204,25 +396,31 @@ function setOrderStatus(orderId, status) {
         >
           Produk <span>{{ uniqueProducts.length }}</span>
         </button>
+
+        <button
+          :class="{ active: activeTab === 'categories' }"
+          @click="activeTab = 'categories'"
+        >
+          Kategori <span>{{ props.categoryRecords.length }}</span>
+        </button>
+
         <button
           :class="{ active: activeTab === 'users' }"
           @click="activeTab = 'users'"
         >
-          Pengguna <span>{{ users.length }}</span>
+          Pengguna <span>{{ props.users.length }}</span>
         </button>
+
         <button
           :class="{ active: activeTab === 'orders' }"
           @click="activeTab = 'orders'"
         >
-          Pesanan <span>{{ orders.length }}</span>
+          Pesanan <span>{{ props.orders.length }}</span>
         </button>
       </nav>
 
       <div class="admin-header-actions">
         <span class="admin-account-name" :title="userName">{{ userName }}</span>
-        <button class="admin-store-link" @click="emit('home')">
-          ← Lihat Toko
-        </button>
         <button class="admin-logout-button" @click="emit('logout')">
           Logout
         </button>
@@ -391,10 +589,9 @@ function setOrderStatus(orderId, status) {
                 </td>
                 <td>
                   <select
-                    class="admin-select compact"
+                    class="admin-select"
                     :value="user.role"
                     :disabled="user.isCurrentUser"
-                    aria-label="Peran pengguna"
                     @change="
                       emit('update-user-role', {
                         userId: user.id,
@@ -402,7 +599,7 @@ function setOrderStatus(orderId, status) {
                       })
                     "
                   >
-                    <option value="customer">Pelanggan</option>
+                    <option value="customer">Customer</option>
                     <option value="admin">Admin</option>
                   </select>
                 </td>
@@ -435,7 +632,7 @@ function setOrderStatus(orderId, status) {
         </div>
       </div>
 
-      <div v-else class="admin-panel">
+      <div v-else-if="activeTab === 'orders'" class="admin-panel">
         <div class="admin-panel-heading">
           <div>
             <h2>Pesanan</h2>
@@ -455,9 +652,9 @@ function setOrderStatus(orderId, status) {
                 >{{ order.customerName || "Pelanggan" }} ·
                 {{ order.customerEmail || "" }}</span
               >
-              <small
-                >{{ order.date }} · {{ order.items.length }} jenis produk</small
-              >
+              <small>
+                {{ order.date }} · {{ order.items?.length ?? 0 }} jenis produk
+              </small>
             </div>
             <div class="admin-order-total">
               <span>Total</span>
@@ -477,12 +674,114 @@ function setOrderStatus(orderId, status) {
                 <option>Dibatalkan</option>
               </select>
             </label>
+            <div class="admin-order-actions">
+              <button
+                class="admin-detail-button"
+                @click="openOrderDetail(order)"
+              >
+                Lihat Detail
+              </button>
+            </div>
           </article>
         </div>
         <div v-else class="admin-empty-state">
           <span>▤</span>
           <strong>Belum ada pesanan</strong>
           <p>Pesanan pelanggan akan muncul di sini.</p>
+        </div>
+      </div>
+
+      <div v-else-if="activeTab === 'categories'" class="admin-panel">
+        <div class="admin-panel-heading">
+          <div>
+            <h2>Manajemen Kategori</h2>
+            <p>Kelola kategori produk Gan's Store.</p>
+          </div>
+
+          <button class="admin-primary-button" @click="openCreateCategory">
+            <span aria-hidden="true">＋</span> Tambah Kategori
+          </button>
+        </div>
+
+        <label class="admin-search">
+          <span aria-hidden="true">⌕</span>
+          <input v-model="categorySearch" placeholder="Cari nama kategori" />
+        </label>
+
+        <div class="admin-category-summary">
+          <div>
+            <span>Total Kategori</span>
+            <strong>{{ props.categoryRecords.length }}</strong>
+          </div>
+          <div>
+            <span>Kategori Aktif</span>
+            <strong>{{ activeCategoryCount }}</strong>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Nama Kategori</th>
+                <th>Slug</th>
+                <th>Deskripsi</th>
+                <th>Status</th>
+                <th><span class="sr-only">Aksi</span></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="category in filteredCategories" :key="category.id">
+                <td>
+                  <strong>{{ category.name }}</strong>
+                </td>
+                <td>{{ category.slug }}</td>
+                <td>{{ category.description || "-" }}</td>
+                <td>
+                  <span
+                    class="admin-status"
+                    :class="category.is_active ? 'positive' : 'muted'"
+                  >
+                    {{ category.is_active ? "Aktif" : "Nonaktif" }}
+                  </span>
+                </td>
+                <td>
+                  <div class="admin-row-actions">
+                    <button
+                      class="admin-icon-button"
+                      title="Edit kategori"
+                      @click="openEditCategory(category)"
+                    >
+                      ✎
+                    </button>
+
+                    <button
+                      class="admin-text-button"
+                      :class="{ reactivate: !category.is_active }"
+                      @click="toggleCategoryStatus(category)"
+                    >
+                      {{ category.is_active ? "Nonaktifkan" : "Aktifkan" }}
+                    </button>
+
+                    <button
+                      class="admin-icon-button danger"
+                      title="Hapus kategori"
+                      @click="deleteCategory(category)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr v-if="filteredCategories.length === 0">
+                <td colspan="5" class="admin-empty-row">
+                  Belum ada kategori yang ditemukan.
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -619,6 +918,280 @@ function setOrderStatus(orderId, status) {
       </section>
     </div>
   </main>
+
+  <div
+    v-if="categoryDialogOpen"
+    class="admin-dialog-backdrop"
+    @click.self="categoryDialogOpen = false"
+  >
+    <section
+      class="admin-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="category-dialog-title"
+    >
+      <div class="admin-dialog-heading">
+        <div>
+          <p class="admin-eyebrow">KATEGORI TOKO</p>
+          <h2 id="category-dialog-title">
+            {{
+              editingCategoryId === null ? "Tambah Kategori" : "Edit Kategori"
+            }}
+          </h2>
+        </div>
+
+        <button
+          class="admin-icon-button"
+          title="Tutup"
+          @click="categoryDialogOpen = false"
+        >
+          ×
+        </button>
+      </div>
+
+      <form class="admin-product-form" @submit.prevent="saveCategory">
+        <label>
+          Nama kategori
+          <input
+            v-model.trim="categoryForm.name"
+            type="text"
+            placeholder="Contoh: Fashion"
+            maxlength="80"
+            required
+          />
+        </label>
+
+        <label>
+          Deskripsi
+          <textarea
+            v-model.trim="categoryForm.description"
+            rows="4"
+            maxlength="500"
+            placeholder="Masukkan deskripsi kategori..."
+          ></textarea>
+        </label>
+
+        <label class="admin-check-field">
+          <input v-model="categoryForm.is_active" type="checkbox" />
+          Kategori aktif
+        </label>
+
+        <div class="admin-dialog-actions">
+          <button
+            type="button"
+            class="admin-secondary-button"
+            @click="categoryDialogOpen = false"
+          >
+            Batal
+          </button>
+
+          <button type="submit" class="admin-primary-button">
+            {{
+              editingCategoryId === null
+                ? "Simpan Kategori"
+                : "Simpan Perubahan"
+            }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- MODAL DETAIL PESANAN -->
+  <div
+    v-if="selectedOrder"
+    class="admin-dialog-backdrop"
+    @click.self="closeOrderDetail"
+  >
+    <section
+      class="admin-dialog admin-order-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="order-detail-title"
+    >
+      <div class="admin-dialog-heading">
+        <div>
+          <p class="admin-eyebrow">INFORMASI TRANSAKSI</p>
+          <h2 id="order-detail-title">Detail Pesanan</h2>
+          <span class="admin-order-number">
+            {{ selectedOrder.orderNumber || selectedOrder.id }}
+          </span>
+        </div>
+
+        <button
+          class="admin-icon-button"
+          title="Tutup"
+          @click="closeOrderDetail"
+        >
+          ×
+        </button>
+      </div>
+
+      <!-- STATUS PESANAN -->
+      <div class="admin-detail-status">
+        <span>Status Pesanan</span>
+        <strong>{{ selectedOrder.status }}</strong>
+      </div>
+
+      <!-- INFORMASI PELANGGAN -->
+      <div class="admin-detail-section">
+        <h3>Informasi Pelanggan</h3>
+
+        <div class="admin-detail-grid">
+          <div>
+            <span>Nama Penerima</span>
+            <strong>{{
+              selectedOrder.address?.recipient ||
+              selectedOrder.customerName ||
+              "-"
+            }}</strong>
+          </div>
+
+          <div>
+            <span>Email</span>
+            <strong>{{ selectedOrder.customerEmail || "-" }}</strong>
+          </div>
+
+          <div>
+            <span>Nomor Telepon</span>
+            <strong>{{ selectedOrder.address?.phone || "-" }}</strong>
+          </div>
+
+          <div>
+            <span>Tanggal Pesanan</span>
+            <strong>{{ formatOrderDate(selectedOrder.date) }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALAMAT PENGIRIMAN -->
+      <div class="admin-detail-section">
+        <h3>Alamat Pengiriman</h3>
+
+        <p class="admin-detail-address">
+          {{ selectedOrder.address?.detail || "-" }},
+          {{ selectedOrder.address?.district || "-" }},
+          {{ selectedOrder.address?.city || "-" }},
+          {{ selectedOrder.address?.province || "-" }}
+          {{ selectedOrder.address?.postalCode || "" }}
+        </p>
+      </div>
+
+      <!-- PRODUK YANG DIPESAN -->
+      <div class="admin-detail-section">
+        <h3>Produk Dipesan</h3>
+
+        <div
+          v-for="(item, index) in selectedOrder.items || []"
+          :key="item.id || index"
+          class="admin-detail-product"
+        >
+          <img v-if="item.image" :src="item.image" :alt="item.name" />
+
+          <div class="admin-detail-product-info">
+            <strong>{{ item.name }}</strong>
+            <span v-if="item.variant">{{ item.variant }}</span>
+            <small> {{ item.quantity }} × {{ formatPrice(item.price) }} </small>
+          </div>
+
+          <strong class="admin-detail-subtotal">
+            {{ formatPrice(item.subtotal ?? item.price * item.quantity) }}
+          </strong>
+        </div>
+
+        <p v-if="!selectedOrder.items?.length" class="admin-detail-empty">
+          Tidak ada informasi produk.
+        </p>
+      </div>
+
+      <!-- PEMBAYARAN -->
+      <div class="admin-detail-section">
+        <h3>Ringkasan Pembayaran</h3>
+
+        <div class="admin-payment-row">
+          <span>Metode Pembayaran</span>
+          <strong>{{ selectedOrder.paymentMethod || "-" }}</strong>
+        </div>
+
+        <div class="admin-payment-row">
+          <span>Subtotal Produk</span>
+          <strong>
+            {{
+              formatPrice(
+                selectedOrder.subtotal ??
+                  (selectedOrder.items || []).reduce(
+                    (total, item) =>
+                      total +
+                      Number(item.subtotal ?? item.price * item.quantity),
+                    0,
+                  ),
+              )
+            }}
+          </strong>
+        </div>
+
+        <div class="admin-payment-row">
+          <span>Ongkos Kirim</span>
+          <strong>{{ formatPrice(selectedOrder.shippingCost ?? 0) }}</strong>
+        </div>
+
+        <div class="admin-payment-total">
+          <span>Total Pembayaran</span>
+          <strong>{{ formatPrice(selectedOrder.total) }}</strong>
+        </div>
+      </div>
+
+      <div class="admin-dialog-actions">
+        <button class="admin-secondary-button" @click="closeOrderDetail">
+          Tutup
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- CUSTOM ADMIN POPUP -->
+  <div
+    v-if="adminDialog.open"
+    class="admin-dialog-backdrop admin-alert-backdrop"
+    @click.self="closeAdminDialog"
+  >
+    <section
+      class="admin-dialog admin-confirm-dialog"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="admin-alert-title"
+    >
+      <div class="admin-alert-icon">
+        <span v-if="adminDialog.type === 'confirm'">?</span>
+        <span v-else>i</span>
+      </div>
+
+      <h2 id="admin-alert-title">{{ adminDialog.title }}</h2>
+
+      <p>{{ adminDialog.message }}</p>
+
+      <div class="admin-dialog-actions">
+        <button
+          v-if="adminDialog.type === 'confirm'"
+          class="admin-secondary-button"
+          @click="closeAdminDialog"
+        >
+          Batal
+        </button>
+
+        <button
+          class="admin-primary-button"
+          @click="
+            adminDialog.type === 'confirm'
+              ? confirmAdminDialog()
+              : closeAdminDialog()
+          "
+        >
+          {{ adminDialog.confirmText }}
+        </button>
+      </div>
+    </section>
+  </div>
 </template>
 
 <style scoped>
@@ -1384,6 +1957,884 @@ function setOrderStatus(orderId, status) {
 
   .admin-form-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* DETAIL PESANAN */
+.admin-order-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.admin-detail-button {
+  min-height: 35px;
+  padding: 0 12px;
+  border: 1px solid #2438d2;
+  border-radius: 5px;
+  background: #fff;
+  color: #2438d2;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.admin-detail-button:hover {
+  background: #f0f2ff;
+}
+
+.admin-order-dialog {
+  width: min(650px, 100%);
+}
+
+.admin-order-number {
+  display: inline-block;
+  margin-top: 6px;
+  color: #7b8598;
+  font-size: 12px;
+}
+
+.admin-detail-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border-radius: 6px;
+  background: #f0f2ff;
+  color: #2438d2;
+  font-size: 12px;
+}
+
+.admin-detail-status strong {
+  font-size: 12px;
+}
+
+.admin-detail-section {
+  display: grid;
+  gap: 13px;
+  padding: 19px 0;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.admin-detail-section h3 {
+  color: #263248;
+  font-size: 14px;
+}
+
+.admin-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.admin-detail-grid > div {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-detail-grid span,
+.admin-detail-address,
+.admin-payment-row span {
+  color: #7b8598;
+  font-size: 11px;
+}
+
+.admin-detail-grid strong {
+  color: #263248;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.admin-detail-address {
+  color: #465269;
+  line-height: 1.7;
+}
+
+.admin-detail-product {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f1f5;
+}
+
+.admin-detail-product:last-of-type {
+  border-bottom: 0;
+}
+
+.admin-detail-product img {
+  width: 55px;
+  height: 55px;
+  flex: 0 0 55px;
+  border-radius: 6px;
+  background: #f1f3f7;
+  object-fit: cover;
+}
+
+.admin-detail-product-info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+
+.admin-detail-product-info strong {
+  color: #263248;
+  font-size: 12px;
+}
+
+.admin-detail-product-info span,
+.admin-detail-product-info small {
+  color: #7b8598;
+  font-size: 11px;
+}
+
+.admin-detail-subtotal {
+  color: #263248;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.admin-detail-empty {
+  color: #7b8598;
+  font-size: 12px;
+}
+
+.admin-payment-row,
+.admin-payment-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-payment-row strong {
+  color: #465269;
+  font-size: 12px;
+  text-align: right;
+}
+
+.admin-payment-total {
+  padding-top: 13px;
+  border-top: 1px dashed #dce1ea;
+}
+
+.admin-payment-total span {
+  color: #263248;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-payment-total strong {
+  color: #2438d2;
+  font-size: 17px;
+}
+
+.admin-order-row {
+  grid-template-columns: minmax(210px, 1fr) auto 180px auto;
+}
+
+@media (max-width: 720px) {
+  .admin-order-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-order-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 440px) {
+  .admin-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-detail-product {
+    flex-wrap: wrap;
+  }
+
+  .admin-detail-subtotal {
+    margin-left: auto;
+  }
+}
+
+/* CUSTOM ADMIN ALERT & CONFIRMATION */
+
+.admin-alert-backdrop {
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(3px);
+}
+
+.admin-confirm-dialog {
+  width: min(390px, 100%);
+  padding: 30px 26px 24px;
+  border-radius: 12px;
+  text-align: center;
+  animation: admin-popup-enter 0.2s ease;
+}
+
+.admin-alert-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 17px;
+  border-radius: 50%;
+  background: #eef0ff;
+  color: #2438d2;
+  font-size: 23px;
+  font-weight: 700;
+}
+
+.admin-confirm-dialog h2 {
+  margin-bottom: 10px;
+  color: #172033;
+  font-size: 19px;
+}
+
+.admin-confirm-dialog > p {
+  margin: 0 auto;
+  color: #69758a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.admin-confirm-dialog .admin-dialog-actions {
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.admin-confirm-dialog .admin-primary-button {
+  min-width: 115px;
+}
+
+@keyframes admin-popup-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* =========================================
+   ADMIN DASHBOARD - MODERN UI IMPROVEMENT
+========================================= */
+
+.admin-page {
+  min-height: 100vh;
+  padding-bottom: 60px;
+  background: #f6f8fc;
+  color: #172033;
+  font-family: inherit;
+}
+
+/* HEADER */
+.admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  min-height: 76px;
+  padding: 10px max(28px, calc((100% - 1320px) / 2));
+  gap: 30px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e8edf5;
+  box-shadow: 0 3px 15px rgba(20, 35, 70, 0.035);
+  backdrop-filter: blur(12px);
+}
+
+.admin-brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #3048ed, #182bb9);
+  box-shadow: 0 5px 12px rgba(36, 56, 210, 0.2);
+}
+
+.admin-brand-name strong {
+  color: #172554;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.admin-header .admin-tabs {
+  gap: 12px;
+}
+
+.admin-header .admin-tabs button {
+  padding: 12px 13px 10px;
+  border-radius: 9px 9px 0 0;
+  transition: 0.2s ease;
+}
+
+.admin-header .admin-tabs button:hover {
+  color: #2438d2;
+  background: #f5f6ff;
+}
+
+.admin-header .admin-tabs button.active {
+  color: #2438d2;
+  background: #f1f3ff;
+}
+
+.admin-header .admin-tabs button span {
+  background: #edf0ff;
+  color: #3449c8;
+  font-weight: 700;
+}
+
+.admin-account-name {
+  color: #263248;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-logout-button {
+  min-height: 39px;
+  padding: 0 17px;
+  border-radius: 9px;
+  background: #ef4444;
+  transition: 0.2s ease;
+}
+
+.admin-logout-button:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+/* PAGE HEADING */
+.admin-page > .admin-heading,
+.admin-page > .admin-metrics,
+.admin-page > .admin-workspace {
+  width: min(1320px, calc(100% - 64px));
+}
+
+.admin-heading {
+  margin-top: 38px;
+  margin-bottom: 28px;
+}
+
+.admin-eyebrow {
+  color: #3449d6;
+  font-size: 11px;
+  letter-spacing: 0.13em;
+}
+
+.admin-heading h1 {
+  margin-top: 8px;
+  color: #172554;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.7px;
+}
+
+.admin-subtitle {
+  margin-top: 8px;
+  color: #718096;
+  font-size: 14px;
+}
+
+/* STATISTIC CARDS */
+.admin-metrics {
+  gap: 16px;
+  border: 0;
+  background: transparent;
+  margin-bottom: 28px;
+}
+
+.admin-metric {
+  position: relative;
+  min-height: 120px;
+  padding: 22px 24px;
+  gap: 7px;
+  border: 1px solid #e5eaf4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(25, 45, 90, 0.035);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.admin-metric:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 9px 22px rgba(25, 45, 90, 0.07);
+}
+
+.admin-metric:nth-child(1) {
+  border-top: 3px solid #4263eb;
+}
+
+.admin-metric:nth-child(2) {
+  border-top: 3px solid #10b981;
+}
+
+.admin-metric:nth-child(3) {
+  border-top: 3px solid #bd4bff;
+}
+
+.admin-metric:last-child {
+  border-right: 1px solid #e5eaf4;
+}
+
+.admin-metric-label {
+  color: #718096;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.admin-metric strong {
+  color: #172554;
+  font-size: 29px;
+  font-weight: 800;
+}
+
+.admin-metric small {
+  color: #8a96aa;
+  font-size: 12px;
+}
+
+/* MAIN WORKSPACE */
+.admin-workspace {
+  border: 1px solid #e5eaf4;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 5px 22px rgba(25, 45, 90, 0.04);
+}
+
+.admin-tabs:not(.admin-header .admin-tabs) {
+  padding: 0 25px;
+  background: #fff;
+}
+
+.admin-tabs button {
+  transition: 0.2s ease;
+}
+
+/* CONTENT PANEL */
+.admin-panel {
+  padding: 27px;
+}
+
+.admin-panel-heading {
+  margin-bottom: 23px;
+}
+
+.admin-panel-heading h2 {
+  color: #172554;
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.admin-panel-heading p {
+  color: #8290a5;
+  font-size: 13px;
+}
+
+/* BUTTONS */
+.admin-primary-button {
+  min-height: 43px;
+  padding: 0 19px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #344bea, #2438d2);
+  box-shadow: 0 4px 10px rgba(36, 56, 210, 0.16);
+  transition: 0.2s ease;
+}
+
+.admin-primary-button:hover {
+  background: linear-gradient(135deg, #263bd4, #1729b5);
+  box-shadow: 0 6px 14px rgba(36, 56, 210, 0.23);
+  transform: translateY(-1px);
+}
+
+.admin-secondary-button {
+  border-radius: 9px;
+  transition: 0.2s ease;
+}
+
+.admin-secondary-button:hover {
+  border-color: #aebaf0;
+  background: #f6f7ff;
+}
+
+/* SEARCH */
+.admin-search {
+  width: min(430px, 100%);
+  height: 43px;
+  margin-bottom: 19px;
+  padding: 0 14px;
+  border: 1px solid #e0e6f0;
+  border-radius: 9px;
+  background: #fff;
+  transition: 0.2s ease;
+}
+
+.admin-search:focus-within {
+  border-color: #6678ed;
+  box-shadow: 0 0 0 3px rgba(52, 73, 234, 0.09);
+}
+
+.admin-search input {
+  font-size: 13px;
+}
+
+/* TABLE */
+.admin-table-wrap {
+  border: 1px solid #e9edf5;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.admin-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-table th {
+  padding: 15px 14px;
+  border-top: 0;
+  border-bottom: 1px solid #e8edf5;
+  background: #f7f9fd;
+  color: #66748a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-table th:first-child {
+  border-radius: 10px 0 0 0;
+}
+
+.admin-table th:last-child {
+  border-radius: 0 10px 0 0;
+}
+
+.admin-table td {
+  padding: 14px;
+  border-bottom: 1px solid #edf1f6;
+  color: #526078;
+  font-size: 12px;
+  transition: background 0.15s ease;
+}
+
+.admin-table tbody tr:hover td {
+  background: #fafbff;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-product-cell img {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #edf0f5;
+  border-radius: 9px;
+  background: #f7f8fb;
+}
+
+.admin-product-cell strong,
+.admin-user-cell strong {
+  color: #25324b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* BADGES */
+.admin-stock,
+.admin-bestseller,
+.admin-status {
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-stock {
+  background: #eaf8f0;
+  color: #16834c;
+}
+
+.admin-stock.low {
+  background: #fff3e5;
+  color: #c16b12;
+}
+
+.admin-bestseller.featured {
+  background: #edf0ff;
+  color: #3449d6;
+}
+
+.admin-status.positive {
+  background: #eaf8f0;
+  color: #16834c;
+}
+
+.admin-status.muted {
+  background: #f1f3f7;
+  color: #69758a;
+}
+
+/* ACTION BUTTONS */
+.admin-row-actions {
+  gap: 7px;
+}
+
+.admin-icon-button {
+  width: 35px;
+  height: 35px;
+  border-radius: 9px;
+  color: #3449c8;
+  font-size: 16px;
+  transition: 0.2s ease;
+}
+
+.admin-icon-button:hover {
+  border-color: #b9c3f5;
+  background: #f0f2ff;
+  color: #2438d2;
+  transform: translateY(-1px);
+}
+
+.admin-icon-button.danger {
+  color: #e34b55;
+}
+
+.admin-icon-button.danger:hover {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+/* ORDER LIST */
+.admin-order-row {
+  padding: 19px 12px;
+  border-bottom: 1px solid #edf1f6;
+  transition: background 0.2s ease;
+}
+
+.admin-order-row:hover {
+  background: #fafbff;
+}
+
+.admin-order-main strong,
+.admin-order-total strong {
+  color: #25324b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-detail-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  transition: 0.2s ease;
+}
+
+.admin-detail-button:hover {
+  background: #edf0ff;
+  transform: translateY(-1px);
+}
+
+/* EMPTY STATE */
+.admin-empty-state {
+  padding: 65px 20px;
+  color: #8490a5;
+}
+
+.admin-empty-state > span {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: #f0f2ff;
+  color: #3449d6;
+  font-size: 27px;
+}
+
+.admin-empty-state strong {
+  color: #263653;
+  font-size: 16px;
+}
+
+/* DIALOG */
+.admin-dialog {
+  border: 1px solid #e9edf5;
+  border-radius: 15px;
+  box-shadow: 0 24px 75px rgba(15, 23, 42, 0.2);
+}
+
+.admin-dialog-heading h2 {
+  color: #172554;
+  font-weight: 800;
+}
+
+.admin-product-form label {
+  color: #47546b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-product-form input,
+.admin-product-form select,
+.admin-product-form textarea {
+  min-height: 42px;
+  border: 1px solid #e0e6f0;
+  border-radius: 8px;
+  transition: 0.2s ease;
+}
+
+.admin-product-form input:focus,
+.admin-product-form select:focus,
+.admin-product-form textarea:focus {
+  border-color: #6678ed;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 73, 234, 0.09);
+}
+
+/* ORDER DETAIL */
+.admin-order-dialog {
+  border-radius: 15px;
+}
+
+.admin-detail-status {
+  border: 1px solid #e0e5ff;
+  border-radius: 9px;
+}
+
+.admin-detail-section {
+  padding: 21px 0;
+}
+
+.admin-detail-section h3 {
+  color: #25324b;
+  font-weight: 700;
+}
+
+.admin-detail-product img {
+  border: 1px solid #edf0f5;
+  border-radius: 9px;
+}
+
+/* SCROLLBAR */
+.admin-table-wrap::-webkit-scrollbar {
+  height: 7px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-track {
+  background: #f1f3f8;
+  border-radius: 10px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb {
+  background: #c6cde0;
+  border-radius: 10px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: #8997bd;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .admin-header {
+    gap: 14px;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .admin-header .admin-tabs {
+    gap: 5px;
+  }
+
+  .admin-header .admin-tabs button {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .admin-page > .admin-heading,
+  .admin-page > .admin-metrics,
+  .admin-page > .admin-workspace {
+    width: calc(100% - 36px);
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-header {
+    position: relative;
+    padding: 12px 14px 0;
+  }
+
+  .admin-header .admin-tabs {
+    padding-bottom: 4px;
+  }
+
+  .admin-heading {
+    margin-top: 25px;
+  }
+
+  .admin-heading h1 {
+    font-size: 26px;
+  }
+
+  .admin-metrics {
+    gap: 10px;
+  }
+
+  .admin-metric {
+    border-radius: 11px;
+  }
+
+  .admin-panel {
+    padding: 18px 13px;
+  }
+
+  .admin-workspace {
+    border-radius: 12px;
+  }
+
+  .admin-table {
+    min-width: 700px;
+  }
+}
+
+@media (max-width: 440px) {
+  .admin-page > .admin-heading,
+  .admin-page > .admin-metrics,
+  .admin-page > .admin-workspace {
+    width: calc(100% - 24px);
+  }
+
+  .admin-metrics {
+    gap: 8px;
+  }
+
+  .admin-metric {
+    min-height: 80px;
+    padding: 13px;
+  }
+
+  .admin-heading h1 {
+    font-size: 23px;
+  }
+
+  .admin-panel-heading {
+    flex-wrap: wrap;
+  }
+
+  .admin-panel-heading > * {
+    max-width: 100%;
+  }
+
+  .admin-dialog {
+    padding: 19px;
   }
 }
 </style>

@@ -1,8 +1,13 @@
+
 <script setup>
 defineProps({
   addressForm: {
     type: Object,
     required: true,
+  },
+  hasSavedAddress: {
+    type: Boolean,
+    default: false,
   },
 });
 
@@ -13,14 +18,31 @@ const emit = defineEmits(["back", "cancel", "save"]);
   <main class="main-content address-page">
     <div class="checkout-heading">
       <div>
-        <h2>Alamat Pengiriman</h2>
-        <p>Lengkapi alamat agar pesananmu dapat dikirim dengan benar.</p>
+        <h2>
+          {{ hasSavedAddress ? "Ubah Alamat Pengiriman" : "Tambah Alamat Pengiriman" }}
+        </h2>
+        <p>
+          {{
+            hasSavedAddress
+              ? "Perbarui alamat utama untuk pengiriman pesananmu."
+              : "Lengkapi alamat agar pesananmu dapat dikirim dengan benar."
+          }}
+        </p>
       </div>
-      <button class="back-home-btn" @click="emit('back')">← Kembali</button>
+
+      <button class="back-home-btn" @click="emit('back')">
+        ← Kembali
+      </button>
     </div>
 
     <section class="address-form-card">
       <h3>Informasi Penerima</h3>
+
+      <p v-if="hasSavedAddress" class="address-saved-info">
+        Alamat utama kamu sudah tersimpan. Perubahan yang disimpan akan
+        menggantikan alamat sebelumnya.
+      </p>
+
       <form @submit.prevent="emit('save')">
         <div class="address-form-grid">
           <div class="address-field">
@@ -32,6 +54,7 @@ const emit = defineEmits(["back", "cancel", "save"]);
               required
             />
           </div>
+
           <div class="address-field">
             <label>Nomor Telepon</label>
             <input
@@ -41,6 +64,7 @@ const emit = defineEmits(["back", "cancel", "save"]);
               required
             />
           </div>
+
           <div class="address-field">
             <label>Provinsi</label>
             <input
@@ -50,6 +74,7 @@ const emit = defineEmits(["back", "cancel", "save"]);
               required
             />
           </div>
+
           <div class="address-field">
             <label>Kota / Kabupaten</label>
             <input
@@ -59,6 +84,7 @@ const emit = defineEmits(["back", "cancel", "save"]);
               required
             />
           </div>
+
           <div class="address-field">
             <label>Kecamatan</label>
             <input
@@ -68,6 +94,7 @@ const emit = defineEmits(["back", "cancel", "save"]);
               required
             />
           </div>
+
           <div class="address-field">
             <label>Kode Pos</label>
             <input
@@ -77,6 +104,7 @@ const emit = defineEmits(["back", "cancel", "save"]);
               required
             />
           </div>
+
           <div class="address-field full-width">
             <label>Detail Alamat</label>
             <textarea
@@ -96,7 +124,10 @@ const emit = defineEmits(["back", "cancel", "save"]);
           >
             Batal
           </button>
-          <button type="submit" class="address-save-btn">Simpan Alamat</button>
+
+          <button type="submit" class="address-save-btn">
+            {{ hasSavedAddress ? "Simpan Perubahan" : "Simpan Alamat" }}
+          </button>
         </div>
       </form>
     </section>

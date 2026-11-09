@@ -11,6 +11,7 @@ import AddressPage from "./components/page/AddressPage.vue";
 import CheckoutPage from "./components/page/CheckoutPage.vue";
 import OrdersPage from "./components/page/OrdersPage.vue";
 import AdminDashboard from "./components/admin/AdminDashboard.vue";
+import AppPopup from "./components/AppPopup.vue";
 
 const isLoggedIn = ref(false);
 const currentUserRole = ref(null);
@@ -31,8 +32,11 @@ const isAuthChecking = ref(true);
 const searchQuery = ref("");
 const activeCategory = ref("Best Seller");
 const favorites = ref([]);
+const wishlistRecords = ref([]);
 const cart = ref([]);
 const activePage = ref("home");
+const addressReturnPage = ref("cart");
+const addressWasMissing = ref(false);
 const orders = ref([]);
 const users = ref([]);
 
@@ -46,6 +50,322 @@ const categories = ref([]);
 const adminCategories = ref([]);
 const isProductsLoading = ref(false);
 
+// Custom popup
+const showAppPopup = ref(false);
+const popupType = ref("info");
+const popupTitle = ref("Informasi");
+const popupMessage = ref("");
+const popupConfirmText = ref("Mengerti");
+const popupCancelText = ref("Batal");
+const popupShowCancel = ref(false);
+const popupResolver = ref(null);
+
+function showAlert(message, type = "info", title = "") {
+  popupType.value = type;
+  popupMessage.value = String(message);
+  popupShowCancel.value = false;
+  popupConfirmText.value = "Mengerti";
+
+  const defaultTitles = {
+    success: "Berhasil!",
+    error: "Terjadi Kesalahan",
+    warning: "Perhatian",
+    info: "Informasi",
+  };
+
+  popupTitle.value = title || defaultTitles[type] || "Informasi";
+
+  showAppPopup.value = true;
+}
+
+function showConfirm(message, title = "Konfirmasi") {
+  return new Promise((resolve) => {
+    popupType.value = "confirm";
+    popupTitle.value = title;
+    popupMessage.value = message;
+    popupConfirmText.value = "Ya, Lanjutkan";
+    popupCancelText.value = "Batal";
+    popupShowCancel.value = true;
+
+    popupResolver.value = resolve;
+    showAppPopup.value = true;
+  });
+}
+
+function handlePopupConfirm() {
+  showAppPopup.value = false;
+
+  if (popupResolver.value) {
+    popupResolver.value(true);
+    popupResolver.value = null;
+  }
+}
+
+function handlePopupCancel() {
+  showAppPopup.value = false;
+
+  if (popupResolver.value) {
+    popupResolver.value(false);
+    popupResolver.value = null;
+  }
+}
+
+function alert(message) {
+  showAlert(message, "info");
+}
+
+function mapOrderFromApi(order) {
+  return {
+    id: order.id,
+    orderNumber: order.order_number,
+    date: order.created_at,
+
+    customerName: order.user?.name || order.user?.username || order.recipient,
+    customerEmail: order.user?.email || "",
+
+    items: (order.items || []).map((item) => ({
+      id: item.product_id ?? item.id,
+      productId: item.product_id,
+      name: item.product_name,
+      variant: item.variant,
+      image: item.image_url,
+      price: Number(item.price),
+      quantity: Number(item.quantity),
+      subtotal: Number(item.subtotal),
+    })),
+
+    address: {
+      recipient: order.recipient,
+      phone: order.phone,
+      province: order.province,
+      city: order.city,
+      district: order.district,
+      postalCode: order.postal_code,
+      detail: order.address_detail,
+    },
+
+    paymentMethod: order.payment_method,
+    subtotal: Number(order.subtotal || 0),
+    shippingCost: Number(order.shipping_cost || 0),
+    total: Number(order.total),
+    status: order.status,
+  };
+}
+
+function mapCartFromApi(cartData) {
+  if (!cartData || !cartData.items) return [];
+
+  return cartData.items
+    .filter((item) => item.product)
+    .map((item) => {
+      const product = item.product;
+
+      const latestProduct = products.value.find(
+        (p) => Number(p.id) === Number(product.id),
+      );
+
+      const imagePath =
+        product.image_url || product.image || latestProduct?.image || "";
+
+      return {
+        id: product.id,
+        productId: product.id,
+        cartItemId: item.id,
+
+        name: product.name,
+        variant: product.variant || "",
+
+        image: imagePath
+          ? imagePath.startsWith("http")
+            ? imagePath
+            : `http://127.0.0.1:8000/storage/${imagePath}`
+          : "",
+
+        price: Number(product.price),
+        stock: Number(product.stock),
+        quantity: Number(item.quantity),
+
+        bestseller: Boolean(product.bestseller),
+        category: product.category?.name || latestProduct?.category || "",
+      };
+    });
+}
+
+async function fetchOrders() {
+  if (!isLoggedIn.value || currentUserRole.value === "admin") return;
+
+  const requestedUserId = currentUserId.value;
+
+  try {
+    const response = await api.get("/orders");
+
+    if (
+      currentUserId.value !== requestedUserId ||
+      currentUserRole.value === "admin"
+    ) {
+      return;
+    }
+
+    orders.value = (response.data.orders || []).map(mapOrderFromApi);
+  } catch (error) {
+    console.error(
+      "Gagal mengambil pesanan customer:",
+      error.response?.data || error,
+    );
+  }
+}
+
+async function fetchAdminOrders() {
+  if (!isLoggedIn.value || currentUserRole.value !== "admin") return;
+
+  try {
+    const response = await api.get("/admin/orders");
+
+    orders.value = (response.data.orders || []).map(mapOrderFromApi);
+
+    console.log("Pesanan seluruh customer:", orders.value);
+  } catch (error) {
+    console.error(
+      "Gagal mengambil pesanan customer untuk admin:",
+      error.response?.data || error,
+    );
+  }
+}
+
+async function fetchCart() {
+  if (!isLoggedIn.value || currentUserRole.value !== "customer") {
+    return;
+  }
+
+  const requestedUserId = currentUserId.value;
+
+  try {
+    const response = await api.get("/cart");
+
+    // Pastikan respons masih milik akun yang sedang login.
+    if (
+      currentUserId.value !== requestedUserId ||
+      currentUserRole.value !== "customer"
+    ) {
+      return;
+    }
+
+    // Perbarui isi keranjang tanpa mengosongkan data sebelumnya.
+    cart.value = mapCartFromApi(response.data.cart);
+  } catch (error) {
+    console.error("Gagal mengambil keranjang:", error.response?.data || error);
+  }
+}
+
+async function fetchWishlist() {
+  if (!isLoggedIn.value || currentUserRole.value !== "customer") {
+    return;
+  }
+
+  const requestedUserId = currentUserId.value;
+
+  try {
+    const response = await api.get("/wishlist");
+
+    // Pastikan respons masih milik akun yang sedang login.
+    if (
+      currentUserId.value !== requestedUserId ||
+      currentUserRole.value !== "customer"
+    ) {
+      return;
+    }
+
+    wishlistRecords.value = response.data.wishlists || [];
+
+    favorites.value = wishlistRecords.value.map((item) =>
+      Number(item.product_id ?? item.product?.id),
+    );
+  } catch (error) {
+    console.error("Gagal mengambil Wishlist:", error.response?.data || error);
+  }
+}
+
+async function fetchAddress() {
+  if (!isLoggedIn.value || currentUserRole.value !== "customer") {
+    return;
+  }
+
+  const requestedUserId = currentUserId.value;
+
+  try {
+    const response = await api.get("/address");
+
+    // Pastikan respons masih milik akun yang sedang login.
+    if (
+      currentUserId.value !== requestedUserId ||
+      currentUserRole.value !== "customer"
+    ) {
+      return;
+    }
+
+    const address = response.data.address;
+
+    if (address) {
+      userAddress.value = {
+        recipient: address.recipient || "",
+        phone: address.phone || "",
+        province: address.province || "",
+        city: address.city || "",
+        district: address.district || "",
+        postalCode: address.postal_code || "",
+        detail: address.address_detail || "",
+      };
+
+      addressForm.value = { ...userAddress.value };
+    } else {
+      userAddress.value = {
+        recipient: "",
+        phone: "",
+        province: "",
+        city: "",
+        district: "",
+        postalCode: "",
+        detail: "",
+      };
+
+      addressForm.value = { ...userAddress.value };
+    }
+  } catch (error) {
+    console.error(
+      "Gagal mengambil alamat pengguna:",
+      error.response?.data || error,
+    );
+  }
+}
+
+async function cancelOrder(orderId) {
+  const confirmed = await showConfirm(
+    "Apakah kamu yakin ingin membatalkan pesanan ini?",
+    "Batalkan Pesanan?",
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const response = await api.patch(`/orders/${orderId}/cancel`);
+
+    alert(response.data.message || "Pesanan berhasil dibatalkan.");
+
+    // Perbarui daftar pesanan.
+    await fetchOrders();
+
+    // Perbarui stok produk dari backend.
+    await fetchProducts();
+  } catch (error) {
+    console.error("Gagal membatalkan pesanan:", error.response?.data || error);
+
+    alert(
+      error.response?.data?.message ||
+        "Gagal membatalkan pesanan. Silakan coba lagi.",
+    );
+  }
+}
+
 async function fetchProducts() {
   isProductsLoading.value = true;
 
@@ -54,14 +374,22 @@ async function fetchProducts() {
 
     products.value = response.data.products.map((product) => ({
       ...product,
+
+      // Samakan properti gambar untuk seluruh frontend
+      image: product.image_url || product.image || "",
+
       category: product.category?.name || "",
       bestseller: Boolean(product.bestseller),
       stock: Number(product.stock),
       price: Number(product.price),
     }));
+
+    return true;
   } catch (error) {
     console.error("Fetch products error:", error);
     alert("Gagal mengambil data produk.");
+
+    return false;
   } finally {
     isProductsLoading.value = false;
   }
@@ -73,7 +401,7 @@ async function fetchAdminProducts() {
   try {
     const response = await api.get("/admin/products");
 
-    adminProducts.value = response.data.products.map((product) => ({
+    adminProducts.value = (response.data.products || []).map((product) => ({
       ...product,
       category: product.category?.name || "",
       bestseller: Boolean(product.bestseller),
@@ -108,7 +436,7 @@ async function fetchAdminCategories() {
   try {
     const response = await api.get("/admin/categories");
 
-    adminCategories.value = response.data.categories;
+    adminCategories.value = response.data.categories || [];
   } catch (error) {
     console.error("Fetch admin categories error:", error);
   }
@@ -169,7 +497,9 @@ const filteredProducts = computed(() => {
 
 const wishlistProducts = computed(() => {
   return products.value.filter((product) =>
-    favorites.value.includes(product.id),
+    favorites.value.some(
+      (favoriteId) => Number(favoriteId) === Number(product.id),
+    ),
   );
 });
 
@@ -228,7 +558,7 @@ async function fetchAdminUsers() {
   try {
     const response = await api.get("/admin/users");
 
-    users.value = response.data.users.map((user) => ({
+    users.value = (response.data.users || []).map((user) => ({
       id: user.id,
       name: user.name,
       username: user.username,
@@ -282,20 +612,22 @@ function closeProductDetail() {
 function checkoutSelectedProduct() {
   if (!selectedProduct.value) return;
 
-  const product = selectedProduct.value;
+  const latestProduct = products.value.find(
+    (item) => item.id === selectedProduct.value.id,
+  );
 
-  if (product.stock < 1) {
+  if (!latestProduct || latestProduct.stock < 1) {
     alert("Maaf, stok produk sedang habis!");
     return;
   }
 
-  if (selectedQuantity.value > product.stock) {
+  if (selectedQuantity.value > latestProduct.stock) {
     alert("Jumlah produk melebihi stok yang tersedia!");
     return;
   }
 
   directCheckoutProduct.value = {
-    ...product,
+    ...latestProduct,
     quantity: selectedQuantity.value,
   };
 
@@ -303,94 +635,254 @@ function checkoutSelectedProduct() {
   startCheckout();
 }
 
-function toggleFavorite(id) {
+async function toggleFavorite(id) {
   if (!isLoggedIn.value) {
     showLogin.value = true;
     return;
   }
 
-  if (favorites.value.includes(id)) {
-    favorites.value = favorites.value.filter((item) => item !== id);
-  } else {
-    favorites.value.push(id);
+  if (currentUserRole.value !== "customer") {
+    return;
+  }
+
+  const productId = Number(id);
+
+  const existingWishlist = wishlistRecords.value.find(
+    (item) => Number(item.product_id ?? item.product?.id) === productId,
+  );
+
+  try {
+    if (existingWishlist) {
+      // Hapus Wishlist dari database.
+      await api.delete(`/wishlist/${existingWishlist.id}`);
+    } else {
+      // Tambahkan Wishlist ke database.
+      await api.post("/wishlist", {
+        product_id: productId,
+      });
+    }
+
+    // Sinkronkan kembali data Wishlist dari backend.
+    await fetchWishlist();
+  } catch (error) {
+    console.error("Gagal memperbarui Wishlist:", error.response?.data || error);
+
+    alert(
+      error.response?.data?.message ||
+        "Gagal memperbarui Wishlist. Silakan coba lagi.",
+    );
   }
 }
 
-function startCheckout() {
+async function startCheckout() {
   // Checkout langsung atau checkout dari keranjang
   if (!directCheckoutProduct.value && cart.value.length === 0) {
     alert("Keranjang kamu masih kosong!");
     return;
   }
 
-  if (!userAddress.value.recipient) {
-    openAddressForm();
-    return;
-  }
+  try {
+    // Ambil data produk terbaru dari backend
+    const isSuccess = await fetchProducts();
 
-  activePage.value = "checkout";
+    if (!isSuccess) return;
+
+    const checkoutItems = directCheckoutProduct.value
+      ? [directCheckoutProduct.value]
+      : cart.value;
+
+    // Periksa stok setiap produk
+    for (const item of checkoutItems) {
+      const latestProduct = products.value.find(
+        (product) => product.id === item.id,
+      );
+
+      if (!latestProduct || latestProduct.stock < 1) {
+        alert(`Maaf, stok ${item.name} sedang habis!`);
+        return;
+      }
+
+      if (item.quantity > latestProduct.stock) {
+        alert(
+          `Stok ${item.name} hanya tersedia ${latestProduct.stock} item. Silakan sesuaikan jumlahnya.`,
+        );
+
+        return;
+      }
+
+      // Sinkronkan stok dan data produk terbaru
+      item.stock = latestProduct.stock;
+      item.price = latestProduct.price;
+      item.image = latestProduct.image;
+    }
+
+    if (!userAddress.value.recipient) {
+      openAddressForm();
+      return;
+    }
+
+    activePage.value = "checkout";
+  } catch (error) {
+    console.error("Checkout validation error:", error);
+    alert("Gagal memeriksa stok produk. Silakan coba lagi.");
+  }
 }
 
-function addToCart(product) {
+async function addToCart(product) {
   if (!isLoggedIn.value) {
     showLogin.value = true;
     return;
   }
 
-  if (product.stock < 1) {
+  const latestProduct = products.value.find(
+    (item) => Number(item.id) === Number(product.id),
+  );
+
+  if (!latestProduct || latestProduct.stock < 1) {
     alert("Maaf, stok produk sedang habis!");
     return;
   }
 
-  const existingProduct = cart.value.find((item) => item.id === product.id);
+  const existingProduct = cart.value.find(
+    (item) => Number(item.id) === Number(product.id),
+  );
 
-  if (existingProduct) {
-    if (existingProduct.quantity >= product.stock) {
-      alert("Jumlah produk sudah mencapai batas stok!");
-      return;
-    }
+  if (existingProduct && existingProduct.quantity >= latestProduct.stock) {
+    alert("Jumlah produk sudah mencapai batas stok!");
+    return;
+  }
 
-    existingProduct.quantity++;
-  } else {
-    cart.value.push({
-      ...product,
+  try {
+    const response = await api.post("/cart/items", {
+      product_id: latestProduct.id,
       quantity: 1,
     });
-  }
 
-  alert("Produk berhasil ditambahkan ke keranjang!");
-}
-
-function increaseQuantity(productId) {
-  const index = cart.value.findIndex((item) => item.id === productId);
-
-  if (index !== -1) {
-    const item = cart.value[index];
-
-    if (item.quantity >= item.stock) {
-      alert("Jumlah produk sudah mencapai batas stok!");
-      return;
+    if (response.data.cart) {
+      cart.value = mapCartFromApi(response.data.cart);
+    } else {
+      await fetchCart();
     }
 
-    cart.value[index] = {
-      ...item,
+    alert("Produk berhasil ditambahkan ke keranjang!");
+  } catch (error) {
+    console.error(
+      "Gagal menambahkan produk ke keranjang:",
+      error.response?.data || error,
+    );
+
+    alert(
+      error.response?.data?.message || "Gagal menambahkan produk ke keranjang.",
+    );
+  }
+}
+
+async function increaseQuantity(productId) {
+  const item = cart.value.find(
+    (product) => Number(product.id) === Number(productId),
+  );
+
+  if (!item) return;
+
+  const latestProduct = products.value.find(
+    (product) => Number(product.id) === Number(productId),
+  );
+
+  if (!latestProduct || latestProduct.stock < 1) {
+    alert("Maaf, stok produk sudah habis!");
+    return;
+  }
+
+  if (item.quantity >= latestProduct.stock) {
+    alert("Jumlah produk sudah mencapai batas stok!");
+    return;
+  }
+
+  try {
+    const response = await api.patch(`/cart/items/${item.cartItemId}`, {
       quantity: item.quantity + 1,
-    };
+    });
+
+    if (response.data.cart) {
+      cart.value = mapCartFromApi(response.data.cart);
+    } else {
+      await fetchCart();
+    }
+  } catch (error) {
+    console.error(
+      "Gagal menambah jumlah produk:",
+      error.response?.data || error,
+    );
+
+    alert(error.response?.data?.message || "Gagal memperbarui jumlah produk.");
   }
 }
 
-function decreaseQuantity(productId) {
-  const index = cart.value.findIndex((item) => item.id === productId);
+async function decreaseQuantity(productId) {
+  const item = cart.value.find(
+    (product) => Number(product.id) === Number(productId),
+  );
 
-  if (index !== -1) {
-    const currentQuantity = cart.value[index].quantity;
+  if (!item || item.quantity <= 1) return;
 
-    if (currentQuantity > 1) {
-      cart.value[index] = {
-        ...cart.value[index],
-        quantity: currentQuantity - 1,
-      };
+  try {
+    const response = await api.patch(`/cart/items/${item.cartItemId}`, {
+      quantity: item.quantity - 1,
+    });
+
+    if (response.data.cart) {
+      cart.value = mapCartFromApi(response.data.cart);
+    } else {
+      await fetchCart();
     }
+  } catch (error) {
+    console.error(
+      "Gagal mengurangi jumlah produk:",
+      error.response?.data || error,
+    );
+
+    alert(error.response?.data?.message || "Gagal memperbarui jumlah produk.");
+  }
+}
+
+async function removeFromCart(productId) {
+  const item = cart.value.find(
+    (product) => Number(product.id) === Number(productId),
+  );
+
+  if (!item) {
+    alert("Produk tidak ditemukan di keranjang.");
+    return;
+  }
+
+  const confirmed = await showConfirm(
+    `Apakah kamu yakin ingin menghapus "${item.name}" dari keranjang?`,
+    "Hapus Produk?",
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const response = await api.delete(`/cart/items/${item.cartItemId}`);
+
+    if (response.data.cart) {
+      cart.value = mapCartFromApi(response.data.cart);
+    } else {
+      await fetchCart();
+    }
+
+    showAlert("Produk berhasil dihapus dari keranjang.", "success");
+  } catch (error) {
+    console.error(
+      "Gagal menghapus produk dari keranjang:",
+      error.response?.data || error,
+    );
+
+    showAlert(
+      error.response?.data?.message ||
+        "Gagal menghapus produk dari keranjang. Silakan coba lagi.",
+      "error",
+    );
   }
 }
 
@@ -413,12 +905,11 @@ async function login() {
 
     // Simpan token autentikasi
     authToken.value = token;
-
     localStorage.setItem("gans_store_token", token);
-    // Gunakan token untuk request berikutnya
+
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
 
-    // Simpan data user yang sedang login
+    // Simpan data user
     isLoggedIn.value = true;
     currentUserId.value = user.id;
     currentUserRole.value = user.role;
@@ -435,21 +926,40 @@ async function login() {
       });
     }
 
+    // Bersihkan form dan langsung tutup login
+    username.value = "";
+    password.value = "";
+    showLogin.value = false;
+
+    // Tampilkan popup keberhasilan
+    alert("Login berhasil! Selamat datang di Gan's Store.");
+
     // Arahkan berdasarkan role
-    activePage.value = user.role === "admin" ? "admin" : "home";
     if (user.role === "admin") {
-      await Promise.all([
+      activePage.value = "admin";
+
+      // Muat data admin di belakang layar
+      Promise.all([
         fetchAdminUsers(),
         fetchAdminProducts(),
         fetchAdminCategories(),
-      ]);
+        fetchAdminOrders(),
+      ]).catch((error) => {
+        console.error("Gagal memuat data admin:", error);
+      });
+    } else {
+      activePage.value = "home";
+
+      // Muat data customer di belakang layar
+      Promise.all([
+        fetchOrders(),
+        fetchCart(),
+        fetchWishlist(),
+        fetchAddress(),
+      ]).catch((error) => {
+        console.error("Gagal memuat data customer:", error);
+      });
     }
-    showLogin.value = false;
-
-    username.value = "";
-    password.value = "";
-
-    alert("Login berhasil! Selamat datang di Gan's Store.");
   } catch (error) {
     console.error("Login error:", error);
 
@@ -462,8 +972,21 @@ async function login() {
 }
 
 function openAddressForm() {
+  addressReturnPage.value = activePage.value;
+  addressWasMissing.value = !userAddress.value.recipient;
+
   addressForm.value = { ...userAddress.value };
   activePage.value = "address";
+}
+
+function leaveAddressPage() {
+  // Jika sedang mengisi alamat pertama kali dari direct checkout,
+  // bersihkan produk checkout agar tidak terbawa ke transaksi berikutnya.
+  if (addressWasMissing.value && directCheckoutProduct.value) {
+    directCheckoutProduct.value = null;
+  }
+
+  activePage.value = addressReturnPage.value;
 }
 
 function cancelCheckout() {
@@ -479,7 +1002,7 @@ function backToPreviousPage() {
   }
 }
 
-function saveAddress() {
+async function saveAddress() {
   const address = addressForm.value;
 
   if (
@@ -495,11 +1018,57 @@ function saveAddress() {
     return;
   }
 
-  userAddress.value = { ...address };
-  activePage.value = "checkout";
+  try {
+    const response = await api.put("/address", {
+      recipient: address.recipient.trim(),
+      phone: address.phone.trim(),
+      province: address.province.trim(),
+      city: address.city.trim(),
+      district: address.district.trim(),
+      postal_code: address.postalCode.trim(),
+      address_detail: address.detail.trim(),
+    });
+
+    const savedAddress = response.data.address;
+
+    // Sinkronkan data alamat dari backend.
+    userAddress.value = {
+      recipient: savedAddress.recipient,
+      phone: savedAddress.phone,
+      province: savedAddress.province,
+      city: savedAddress.city,
+      district: savedAddress.district,
+      postalCode: savedAddress.postal_code,
+      detail: savedAddress.address_detail,
+    };
+
+    addressForm.value = { ...userAddress.value };
+
+    alert("Alamat berhasil disimpan!");
+
+    activePage.value = "checkout";
+  } catch (error) {
+    console.error("Gagal menyimpan alamat:", error.response?.data || error);
+
+    const errors = error.response?.data?.errors;
+
+    if (errors) {
+      alert(Object.values(errors).flat()[0]);
+    } else {
+      alert(
+        error.response?.data?.message ||
+          "Gagal menyimpan alamat. Silakan coba lagi.",
+      );
+    }
+  }
 }
 
-function placeOrder() {
+async function placeOrder() {
+  if (!isLoggedIn.value) {
+    alert("Silakan login terlebih dahulu!");
+    return;
+  }
+
   if (!userAddress.value.recipient) {
     alert("Silakan isi alamat pengiriman terlebih dahulu!");
     activePage.value = "address";
@@ -511,47 +1080,108 @@ function placeOrder() {
     return;
   }
 
-  // Validasi stok sebelum pesanan dibuat
-  for (const item of checkoutProducts.value) {
-    const latestProduct = products.value.find(
-      (product) => product.id === item.id,
-    );
+  try {
+    // Ambil data produk terbaru dari backend
+    const isSuccess = await fetchProducts();
 
-    if (!latestProduct || item.quantity > latestProduct.stock) {
-      alert(`Stok ${item.name} tidak mencukupi!`);
-      return;
+    if (!isSuccess) return;
+
+    // Validasi stok terbaru
+    for (const item of checkoutProducts.value) {
+      const latestProduct = products.value.find(
+        (product) => Number(product.id) === Number(item.id),
+      );
+
+      if (!latestProduct || latestProduct.stock < 1) {
+        alert(`Maaf, stok ${item.name} sedang habis!`);
+        return;
+      }
+
+      if (item.quantity > latestProduct.stock) {
+        alert(
+          `Stok ${item.name} hanya tersedia ${latestProduct.stock} item. Silakan sesuaikan jumlahnya.`,
+        );
+        return;
+      }
+
+      if (!latestProduct.is_active) {
+        alert(`Maaf, produk ${item.name} sudah tidak tersedia!`);
+        return;
+      }
+    }
+
+    // Siapkan data yang sesuai dengan validasi Laravel
+    const orderData = {
+      address: {
+        recipient: userAddress.value.recipient,
+        phone: userAddress.value.phone,
+        province: userAddress.value.province,
+        city: userAddress.value.city,
+        district: userAddress.value.district,
+        postalCode: userAddress.value.postalCode,
+        detail: userAddress.value.detail,
+      },
+      payment_method: paymentMethod.value,
+      items: checkoutProducts.value.map((product) => ({
+        product_id: product.id,
+        quantity: product.quantity,
+      })),
+    };
+
+    console.log("Checkout Products:", checkoutProducts.value);
+
+    // Kirim pesanan ke backend
+    const response = await api.post("/orders", orderData);
+
+    console.log("Pesanan berhasil dibuat:", response.data);
+
+    // Ambil ulang pesanan dari database
+    await fetchOrders();
+
+    // Ambil ulang produk agar stok terbaru ditampilkan
+    await fetchProducts();
+
+    // Tampilkan modal keberhasilan
+    showSuccessModal.value = true;
+  } catch (error) {
+    console.error("Place order error:", error.response?.data || error);
+
+    const errors = error.response?.data?.errors;
+
+    if (errors) {
+      const firstError = Object.values(errors).flat()[0];
+      alert(firstError);
+    } else {
+      alert(
+        error.response?.data?.message ||
+          "Pesanan gagal dibuat. Silakan coba lagi.",
+      );
     }
   }
-
-  const newOrder = {
-    id: "GS-" + Date.now(),
-    date: new Date().toLocaleString("id-ID"),
-    customerName: fullName.value || currentUserId.value,
-    customerEmail:
-      users.value.find((user) => user.id === currentUserId.value)?.email || "",
-    items: checkoutProducts.value.map((product) => ({
-      ...product,
-    })),
-    address: { ...userAddress.value },
-    paymentMethod: paymentMethod.value,
-    total: checkoutTotal.value,
-    status: "Pesanan Dibuat",
-  };
-
-  orders.value.unshift(newOrder);
-
-  showSuccessModal.value = true;
 }
 
-function finishOrder() {
-  // Hanya kosongkan Cart jika checkout berasal dari Cart
-  if (!directCheckoutProduct.value) {
-    cart.value = [];
+async function finishOrder() {
+  try {
+    // Kosongkan keranjang backend hanya jika checkout
+    // berasal dari halaman keranjang.
+    if (!directCheckoutProduct.value) {
+      await api.delete("/cart");
+      cart.value = [];
+    }
+  } catch (error) {
+    console.error(
+      "Gagal mengosongkan keranjang:",
+      error.response?.data || error,
+    );
+    alert(
+      "Pesanan berhasil dibuat, tetapi keranjang gagal dikosongkan. Silakan coba lagi.",
+    );
+    return;
   }
-
   directCheckoutProduct.value = null;
   showSuccessModal.value = false;
   activePage.value = "home";
+  await fetchCart();
 }
 
 async function register() {
@@ -630,6 +1260,22 @@ async function logout() {
     // Reset data sementara pengguna
     cart.value = [];
     favorites.value = [];
+    wishlistRecords.value = [];
+    orders.value = [];
+    userAddress.value = {
+      recipient: "",
+      phone: "",
+      province: "",
+      city: "",
+      district: "",
+      postalCode: "",
+      detail: "",
+    };
+
+    addressForm.value = { ...userAddress.value };
+    users.value = [];
+    adminProducts.value = [];
+    adminCategories.value = [];
 
     activePage.value = "home";
 
@@ -644,6 +1290,12 @@ async function restoreAuth() {
     isAuthChecking.value = false;
     return;
   }
+
+  // Bersihkan data sebelum memulihkan sesi.
+  orders.value = [];
+  users.value = [];
+  adminProducts.value = [];
+  adminCategories.value = [];
 
   try {
     authToken.value = savedToken;
@@ -660,12 +1312,19 @@ async function restoreAuth() {
 
     activePage.value = user.role === "admin" ? "admin" : "home";
 
-    // Ambil ulang data pengguna jika yang login adalah admin
     if (user.role === "admin") {
       await Promise.all([
         fetchAdminUsers(),
         fetchAdminProducts(),
         fetchAdminCategories(),
+        fetchAdminOrders(),
+      ]);
+    } else {
+      await Promise.all([
+        fetchOrders(),
+        fetchCart(),
+        fetchWishlist(),
+        fetchAddress(),
       ]);
     }
   } catch (error) {
@@ -680,6 +1339,11 @@ async function restoreAuth() {
     currentUserRole.value = null;
     currentUserId.value = null;
     fullName.value = "";
+
+    orders.value = [];
+    users.value = [];
+    adminProducts.value = [];
+    adminCategories.value = [];
   } finally {
     isAuthChecking.value = false;
   }
@@ -761,18 +1425,33 @@ async function saveProductToBackend(product, isUpdate = false) {
 }
 
 async function deleteProduct(productId) {
-  if (!window.confirm("Yakin ingin menghapus produk ini?")) {
-    return;
-  }
+  const confirmed = await showConfirm(
+    "Apakah kamu yakin ingin menghapus produk ini? Produk yang dihapus tidak dapat dikembalikan.",
+    "Hapus Produk?",
+  );
+
+  if (!confirmed) return;
+
+  const id = Number(productId);
 
   try {
-    await api.delete(`/admin/products/${productId}`);
+    await api.delete(`/admin/products/${id}`);
 
+    // Perbarui data produk admin dan halaman utama.
     await Promise.all([fetchAdminProducts(), fetchProducts()]);
 
-    cart.value = cart.value.filter((product) => product.id !== productId);
+    // Hapus produk dari keranjang lokal.
+    cart.value = cart.value.filter((product) => Number(product.id) !== id);
 
-    favorites.value = favorites.value.filter((id) => id !== productId);
+    // Hapus produk dari daftar favorit.
+    favorites.value = favorites.value.filter(
+      (favoriteId) => Number(favoriteId) !== id,
+    );
+
+    // Hapus data Wishlist lokal.
+    wishlistRecords.value = wishlistRecords.value.filter(
+      (item) => Number(item.product_id) !== id,
+    );
 
     alert("Produk berhasil dihapus.");
   } catch (error) {
@@ -781,7 +1460,6 @@ async function deleteProduct(productId) {
     alert(error.response?.data?.message || "Gagal menghapus produk.");
   }
 }
-
 async function updateUserRole({ userId, role }) {
   const user = users.value.find((item) => item.id === userId);
 
@@ -824,9 +1502,92 @@ async function toggleUserStatus(userId) {
   }
 }
 
-function updateOrderStatus({ orderId, status }) {
-  const order = orders.value.find((item) => item.id === orderId);
-  if (order) order.status = status;
+async function createCategory(category) {
+  await saveCategoryToBackend(category, false);
+}
+
+async function updateCategory(category) {
+  await saveCategoryToBackend(category, true);
+}
+
+async function saveCategoryToBackend(category, isUpdate = false) {
+  try {
+    const payload = {
+      name: category.name,
+      description: category.description || "",
+      is_active: Boolean(category.is_active),
+    };
+
+    if (isUpdate) {
+      await api.put(`/admin/categories/${category.id}`, payload);
+    } else {
+      await api.post("/admin/categories", payload);
+    }
+
+    await Promise.all([fetchAdminCategories(), fetchCategories()]);
+
+    alert(
+      isUpdate
+        ? "Kategori berhasil diperbarui."
+        : "Kategori berhasil ditambahkan.",
+    );
+  } catch (error) {
+    console.error("Gagal menyimpan kategori:", error.response?.data || error);
+
+    alert(error.response?.data?.message || "Kategori gagal disimpan.");
+  }
+}
+
+async function deleteCategory(id) {
+  try {
+    await api.delete(`/admin/categories/${id}`);
+
+    await Promise.all([fetchAdminCategories(), fetchCategories()]);
+
+    alert("Kategori berhasil dihapus.");
+  } catch (error) {
+    console.error("Gagal menghapus kategori:", error.response?.data || error);
+
+    alert(
+      error.response?.data?.message ||
+        "Kategori gagal dihapus. Pastikan tidak ada produk yang menggunakan kategori ini.",
+    );
+  }
+}
+
+async function updateOrderStatus({ orderId, status }) {
+  const order = orders.value.find(
+    (item) => Number(item.id) === Number(orderId),
+  );
+
+  if (!order) {
+    alert("Pesanan tidak ditemukan.");
+    return;
+  }
+
+  const previousStatus = order.status;
+
+  try {
+    const response = await api.patch(`/admin/orders/${orderId}/status`, {
+      status,
+    });
+
+    order.status = response.data.order?.status || status;
+
+    if (status === "Dibatalkan" && previousStatus !== "Dibatalkan") {
+      await Promise.all([fetchProducts(), fetchAdminProducts()]);
+    }
+
+    await fetchAdminOrders();
+
+    alert("Status pesanan berhasil diperbarui.");
+  } catch (error) {
+    console.error("Update order status error:", error.response?.data || error);
+
+    order.status = previousStatus;
+
+    alert(error.response?.data?.message || "Gagal memperbarui status pesanan.");
+  }
 }
 
 function scrollProducts(direction) {
@@ -878,7 +1639,10 @@ function scrollProducts(direction) {
       :categories="categories"
       :format-price="formatPrice"
       :user-name="fullName || username"
-      @home="activePage = 'home'"
+      :category-records="adminCategories"
+      @create-category="createCategory"
+      @update-category="updateCategory"
+      @delete-category="deleteCategory"
       @logout="logout"
       @create-product="createProduct"
       @update-product="updateProduct"
@@ -889,7 +1653,7 @@ function scrollProducts(direction) {
     />
 
     <HomePage
-      v-if="activePage === 'home'"
+      v-if="activePage === 'home' && currentUserRole !== 'admin'"
       :active-category="activeCategory"
       :filtered-products="filteredProducts"
       :favorites="favorites"
@@ -901,7 +1665,7 @@ function scrollProducts(direction) {
     />
 
     <WishlistPage
-      v-if="activePage === 'wishlist'"
+      v-if="activePage === 'wishlist' && currentUserRole === 'customer'"
       :wishlist-products="wishlistProducts"
       :format-price="formatPrice"
       @home="activePage = 'home'"
@@ -910,26 +1674,28 @@ function scrollProducts(direction) {
     />
 
     <CartPage
-      v-if="activePage === 'cart'"
+      v-if="activePage === 'cart' && currentUserRole === 'customer'"
       :cart-products="cartProducts"
       :cart-total="cartTotal"
       :format-price="formatPrice"
       @home="activePage = 'home'"
       @decrease="decreaseQuantity"
       @increase="increaseQuantity"
+      @remove="removeFromCart"
       @checkout="startCheckout"
     />
 
     <AddressPage
-      v-if="activePage === 'address'"
+      v-if="activePage === 'address' && currentUserRole === 'customer'"
       :address-form="addressForm"
-      @back="activePage = 'cart'"
-      @cancel="cancelCheckout"
+      :has-saved-address="Boolean(userAddress.recipient)"
+      @back="leaveAddressPage"
+      @cancel="leaveAddressPage"
       @save="saveAddress"
     />
 
     <CheckoutPage
-      v-if="activePage === 'checkout'"
+      v-if="activePage === 'checkout' && currentUserRole === 'customer'"
       :user-address="userAddress"
       :checkout-products="checkoutProducts"
       :checkout-item-count="checkoutItemCount"
@@ -943,10 +1709,11 @@ function scrollProducts(direction) {
     />
 
     <OrdersPage
-      v-if="activePage === 'orders'"
+      v-if="activePage === 'orders' && currentUserRole === 'customer'"
       :orders="orders"
       :format-price="formatPrice"
       @home="activePage = 'home'"
+      @cancel="cancelOrder"
     />
 
     <!-- SUCCESS MODAL -->
@@ -986,6 +1753,19 @@ function scrollProducts(direction) {
     />
   </div>
 
+  <!-- CUSTOM APP POPUP -->
+  <AppPopup
+    v-model="showAppPopup"
+    :type="popupType"
+    :title="popupTitle"
+    :message="popupMessage"
+    :confirm-text="popupConfirmText"
+    :cancel-text="popupCancelText"
+    :show-cancel="popupShowCancel"
+    @confirm="handlePopupConfirm"
+    @cancel="handlePopupCancel"
+  />
+
   <!-- LOGIN MODAL -->
   <div v-if="showLogin" class="modal-overlay" @click.self="showLogin = false">
     <div class="auth-modal">
@@ -999,9 +1779,9 @@ function scrollProducts(direction) {
 
       <h2>Login</h2>
       <p class="auth-subtitle">Silakan login untuk melanjutkan</p>
-      <p class="demo-admin-hint">
+      <!-- <p class="demo-admin-hint">
         Demo admin: <strong>admin</strong> / <strong>admin123</strong>
-      </p>
+      </p> -->
 
       <form @submit.prevent="login">
         <label>Email / Username</label>
