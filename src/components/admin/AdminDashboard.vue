@@ -2265,7 +2265,6 @@ function formatOrderDate(date) {
 }
 
 .admin-brand-name strong {
-  color: #172554;
   font-size: 15px;
   font-weight: 800;
 }
@@ -2379,11 +2378,11 @@ function formatOrderDate(date) {
 }
 
 .admin-metric:nth-child(2) {
-  border-top: 3px solid #10b981;
+  border-top: 3px solid #4263eb;
 }
 
 .admin-metric:nth-child(3) {
-  border-top: 3px solid #bd4bff;
+  border-top: 3px solid #4263eb;
 }
 
 .admin-metric:last-child {

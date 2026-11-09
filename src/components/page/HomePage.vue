@@ -1,8 +1,8 @@
 <script setup>
-import { ref } from "vue";
+import { ref, watch, nextTick } from "vue";
 import ProductCard from "../product/ProductCard.vue";
 
-defineProps({
+const props = defineProps({
   activeCategory: {
     type: String,
     required: true,
@@ -26,11 +26,33 @@ defineProps({
 });
 
 const emit = defineEmits(["toggle-favorite", "add-to-cart", "order"]);
+
 const productList = ref(null);
 
+// Mengembalikan posisi produk ke paling kiri
+async function resetProductScroll() {
+  await nextTick();
+
+  if (productList.value) {
+    productList.value.scrollTo({
+      left: 0,
+      behavior: "auto",
+    });
+  }
+}
+
+// Reset ketika kategori atau daftar produk berubah
+watch(
+  [() => props.activeCategory, () => props.filteredProducts],
+  resetProductScroll,
+  { flush: "post" },
+);
+
 function scrollProducts(direction) {
-  productList.value?.scrollBy({
-    left: direction * 350,
+  if (!productList.value) return;
+
+  productList.value.scrollBy({
+    left: direction * productList.value.clientWidth * 0.8,
     behavior: "smooth",
   });
 }
